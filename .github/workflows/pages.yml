@@ -42,11 +42,15 @@ jobs:
         run: |
           curl -fsSL https://cdn.jsdelivr.net/npm/@turf/turf@7.2.0/turf.min.js -o vendor/turf/7.2.0/turf.min.js
 
-      # Fetch Terraformer/WKT UMD (exposes global 'Terraformer')
+      # Fetch Terraformer/WKT UMD (global 'Terraformer') — with jsDelivr fallback
       - name: Fetch Terraformer WKT 2.2.1
         run: |
-          curl -fsSL https://unpkg.com/@terraformer/wkt@2.2.1/dist/terraformer-wkt.umd.min.js -o vendor/terraformer-wkt/2.2.1/terraformer-wkt.umd.min.js
-
+          mkdir -p vendor/terraformer-wkt/2.2.1
+          curl -fsSL https://unpkg.com/@terraformer/wkt@2.2.1 \
+            -o vendor/terraformer-wkt/2.2.1/terraformer-wkt.js \
+          || curl -fsSL https://cdn.jsdelivr.net/npm/@terraformer/wkt@2.2.1 \
+            -o vendor/terraformer-wkt/2.2.1/terraformer-wkt.js
+            
       # Package the site for Pages
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
