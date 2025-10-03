@@ -1,0 +1,64 @@
+name: Deploy static site (vendor libs)
+
+on:
+  push:
+    branches: [ main, fix/cdn-links-and-diagnostics, pr/vendorized-static-gha ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Create vendor directories
+      - name: Create vendor dirs
+        run: |
+          mkdir -p vendor/leaflet/1.9.4/images
+          mkdir -p vendor/turf/7.2.0
+          mkdir -p vendor/terraformer-wkt/2.2.1
+
+      # Fetch Leaflet CSS/JS + marker images (as Leaflet expects them)
+      - name: Fetch Leaflet 1.9.4
+        run: |
+          curl -fsSL https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css -o vendor/leaflet/1.9.4/leaflet.css
+          curl -fsSL https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js   -o vendor/leaflet/1.9.4/leaflet.js
+          curl -fsSL https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/images/marker-icon.png     -o vendor/leaflet/1.9.4/images/marker-icon.png
+          curl -fsSL https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/images/marker-icon-2x.png  -o vendor/leaflet/1.9.4/images/marker-icon-2x.png
+          curl -fsSL https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/images/marker-shadow.png   -o vendor/leaflet/1.9.4/images/marker-shadow.png
+
+      # Fetch Turf v7 bundle
+      - name: Fetch Turf 7.2.0
+        run: |
+          curl -fsSL https://cdn.jsdelivr.net/npm/@turf/turf@7.2.0/turf.min.js -o vendor/turf/7.2.0/turf.min.js
+
+      # Fetch Terraformer/WKT UMD (exposes global 'Terraformer')
+      - name: Fetch Terraformer WKT 2.2.1
+        run: |
+          curl -fsSL https://unpkg.com/@terraformer/wkt@2.2.1/dist/terraformer-wkt.umd.min.js -o vendor/terraformer-wkt/2.2.1/terraformer-wkt.umd.min.js
+
+      # Package the site for Pages
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
