@@ -5,15 +5,11 @@
   <title>Route Buffer Tool — Web</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-  <!-- Leaflet CSS/JS — jsDelivr (file paths must be explicit; do NOT use a bare CDN root) -->
-  https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css
-  https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js</script>
-
-  <!-- Turf v7 (buffering) -->
-  https://cdn.jsdelivr.net/npm/@turf/turf@7/turf.min.js</script>
-
-  <!-- Terraformer WKT (UMD build exposes global 'Terraformer') -->
-  https://unpkg.com/@terraformer/wkt@2.2.1/dist/terraformer-wkt.umd.min.js</script>
+  <!-- Local (vendored at deploy-time) — NO external CDNs at runtime -->
+  ./vendor/leaflet/1.9.4/leaflet.css
+  ./vendor/leaflet/1.9.4/leaflet.js</script>
+  ./vendor/turf/7.2.0/turf.min.js</script>
+  ./vendor/terraformer-wkt/2.2.1/terraformer-wkt.umd.min.js</script>
 
   <style>
     :root { --pad: 12px; --accent:#0066ff }
@@ -23,19 +19,11 @@
     h1 { font-size:16px; margin:0 }
     #map { height: 62vh; border: 1px solid #ddd; border-radius: 8px }
     label { display:block; margin:.4rem 0 .25rem; font-weight:600 }
-    input[type="text"], input[type="number"] {
-      width:100%; padding:.55rem .6rem; border:1px solid #ccc; border-radius:8px
-    }
+    input[type="text"], input[type="number"] { width:100%; padding:.55rem .6rem; border:1px solid #ccc; border-radius:8px }
     .row { display:grid; grid-template-columns: 1fr 160px; gap:12px; align-items:end }
-    button {
-      padding:.6rem 1rem; background:var(--accent); color:#fff; border:0; border-radius:8px;
-      font-weight:600; cursor:pointer
-    }
+    button { padding:.6rem 1rem; background:var(--accent); color:#fff; border:0; border-radius:8px; font-weight:600; cursor:pointer }
     button:disabled { opacity:.6; cursor:default }
-    textarea {
-      width:100%; height:9rem; padding:.6rem; border:1px solid #ccc; border-radius:8px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace
-    }
+    textarea { width:100%; height:9rem; padding:.6rem; border:1px solid #ccc; border-radius:8px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace }
     .muted { color:#666; font-size:12px }
     .status { margin:.35rem 0 .75rem; min-height:1.25rem }
     .error { color:#b00020 }
@@ -44,7 +32,6 @@
     .footer { padding: var(--pad); font-size:12px; color:#555; border-top: 1px solid #eee }
     .footer a { color: #333 }
     .diag { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; word-break: break-all; }
-    .warn { padding:10px 12px; border:1px solid #f6b; background:#fff1f6; color:#8a0041; border-radius:8px; margin-bottom:10px }
   </style>
 </head>
 <body>
@@ -84,30 +71,12 @@
   <div class="footer">
     <div><strong>Diagnostics</strong>: <span id="diag" class="diag muted"></span></div>
     <div class="muted" style="margin-top:.5rem">
-      Notes & limits: The public OSRM demo is for testing (no SLA; may rate‑limit). For reliability, point <code>OSRM_BASE_URL</code> to your own OSRM server (Docker) or a paid service. Please keep OSM attribution visible and consider a commercial/hosted tile source if your traffic grows.
+      Notes & limits: The public OSRM demo is for testing (no SLA; may rate‑limit). For reliability, point <code>OSRM_BASE_URL</code>
+      to your own OSRM server (Docker) or a paid service. Please keep OSM attribution visible and consider a commercial/hosted tile source if your traffic grows.
     </div>
   </div>
 
-  <!-- Your app code (runs after the libraries above have loaded) -->
   <script>
-    // --- safety self-test so it's obvious if any CDN failed to load ---
-    (function selfTest() {
-      const missing = [];
-      if (!window.L) missing.push('Leaflet (L)');
-      if (!window.turf) missing.push('Turf (turf)');
-      if (!window.Terraformer) missing.push('Terraformer/WKT (Terraformer)');
-
-      if (missing.length) {
-        const msg = 'One or more libraries failed to load: ' + missing.join(', ') +
-                    '. Check the Network tab and verify the CDN URLs.';
-        const warn = document.createElement('div');
-        warn.className = 'warn';
-        warn.textContent = msg;
-        document.body.insertBefore(warn, document.body.firstChild);
-        console.error(msg);
-      }
-    })();
-
     // === Config you can tweak later ===
     const OSRM_BASE_URL = 'https://router.project-osrm.org'; // swap to your server if needed
     const PROFILE = 'driving'; // 'driving' | 'cycling' | 'walking' if your server supports it
@@ -164,7 +133,7 @@
           }
         }
       } catch (e) {
-        // not a URL or parse failed — ignore
+        // ignore URL parse errors
       }
 
       // De-dup while preserving order
