@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Route Buffer Visualizer</title>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --accent: #22c55e;
+      --error: #ef4444;
+      --border: #1f2937;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"; background: var(--bg); color: var(--text); }
+    header { padding: 16px 20px; border-bottom: 1px solid var(--border); background: #0b1220; position: sticky; top: 0; z-index: 10; }
+    header h1 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: .25px; }
+    main { display: grid; grid-template-columns: 420px 1fr; gap: 16px; height: calc(100vh - 58px); }
+    @media (max-width: 980px) { main { grid-template-columns: 1fr; height: auto; } #map { height: 60vh; } }
+
+    .panel { padding: 16px; border-right: 1px solid var(--border); overflow: auto; background: var(--panel); }
+    .section { margin-bottom: 16px; }
+    label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+    input[type="text"] { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); background: #0b1220; color: var(--text); }
+    select { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); background: #0b1220; color: var(--text); }
+    button { padding: 10px 14px; border-radius: 8px; border: 1px solid #16a34a; background: var(--accent); color: #052e16; font-weight: 700; cursor: pointer; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .row { display: grid; grid-template-columns: 1fr 140px; gap: 8px; align-items: end; }
+    #loading { display: none; font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+    #map { height: calc(100vh - 58px); }
+    .output { padding: 16px; border-top: 1px solid var(--border); background: #0b1220; }
+    textarea { width: 100%; min-height: 120px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); background: #0b1220; color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+
+    .error { display:none; margin-top: 8px; padding: 10px 12px; border-radius: 8px; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.35); color: #fecaca; font-size: 13px; white-space: pre-wrap; }
+    .legend { font-size: 12px; color: var(--muted); margin-top: 8px; }
+    .badge { display:inline-block; padding: 2px 8px; border-radius: 999px; background: #1f2937; color: var(--muted); font-size: 11px; margin-right:6px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🧭 Route Buffer Visualizer</h1>
+  </header>
+  <main>
+    <div class="panel">
+      <div class="section">
+        <label for="gmapsUrl">Google Maps Directions URL</label>
+        <input id="gmapsUrl" type="text" placeholder="Paste a Google Maps directions URL with up to 10 stops (e.g., https://www.google.com/maps/dir/Start/Stop1/Stop2/End)" />
+        <div class="legend">Supported: standard directions URLs, address-based URLs, multi-waypoint paths, and <code>maps.app.goo.gl</code> short links.</div>
+      </div>
+      <div class="section row">
+        <div>
+          <label for="bufferRadius">Buffer Radius</label>
+          <select id="bufferRadius">
+            <option value="10">10 m</option>
+            <option value="25" selected>25 m</option>
+            <option value="50">50 m</option>
+            <option value="100">100 m</option>
+          </select>
+        </div>
+        <div style="display:flex; gap:8px; align-items:end;">
+          <button id="goBtn">Go</button>
+        </div>
+      </div>
+      <div id="loading">⏳ Loading... Please wait.</div>
+      <div id="errorBox" class="error"></div>
+
+      <div class="section">
+        <div class="badge">Output</div>
+        <label for="wktOut">Buffered Polygon (WKT)</label>
+        <textarea id="wktOut" readonly placeholder="WKT will appear here after buffering."></textarea>
+      </div>
+
+      <div class="legend">
+        Tips: If a <code>maps.app.goo.gl</code> link fails to resolve due to browser cross-origin restrictions, open it once in a new tab and paste the expanded URL here.
+      </div>
+    </div>
+    <div id="map"></div>
+  </main>
+
+  <!-- Leaflet -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <!-- Turf -->
+  <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+  <!-- wellknown.js (WKT <-> GeoJSON) -->
+  <script src="https://unpkg.com/wellknown@0.5.0/wellknown.js"></script>
+
+  <script>
+    const state = {
+      map: null,
+      routeLayer: null,
+      bufferLayer: null,
+    };
+
+    function initMap() {
+      state.map = L.map('map', { zoomControl: true }).setView([37.7749, -122.4194], 12);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(state.map);
+    }
+
+    function setLoading(isLoading) {
+      document.getElementById('loading').style.display = isLoading ? 'block' : 'none';
+      document.getElementById('goBtn').disabled = isLoading;
+    }
+
+    function showError(code, message, extra) {
+      const box = document.getElementById('errorBox');
+      box.style.display = 'block';
+      box.textContent = `[${code}] ${message}${extra ? `\n${extra}` : ''}`;
+    }
+
+    function clearError() {
+      const box = document.getElementById('errorBox');
+      box.style.display = 'none';
+      box.textContent = '';
+    }
+
+    function isLatLng(text) {
+      // Accepts "lat,lng" or "lat lng"; returns [lat,lng] or null
+      if (!text) return null;
+      const cleaned = decodeURIComponent(text).trim();
+      const m = cleaned.match(/^\s*(-?\d+(?:\.\d+)?)\s*[ ,]\s*(-?\d+(?:\.\d+)?)\s*$/);
+      if (!m) return null;
+      const lat = parseFloat(m[1]);
+      const lng = parseFloat(m[2]);
+      if (Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+        return [lat, lng];
+      }
+      return null;
+    }
+
+    function extractLatLngPairsFromUrl(url) {
+      // Google often places pairs as !1d<lon>!2d<lat> inside the 'data=' section.
+      const pairs = [];
+      const regex = /!1d(-?\d+(?:\.\d+)?)!2d(-?\d+(?:\.\d+)?)/g;
+      let m;
+      while ((m = regex.exec(url)) !== null) {
+        const lon = parseFloat(m[1]);
+        const lat = parseFloat(m[2]);
+        if (Number.isFinite(lat) && Number.isFinite(lon)) pairs.push({ lat, lng: lon });
+      }
+      return pairs;
+    }
+
+    async function resolveShortUrl(url) {
+      try {
+        const resp = await fetch(url, { redirect: 'follow', method: 'GET' });
+        if (resp && resp.url) return resp.url;
+        return url;
+      } catch {
+        return url;
+      }
+    }
+
+    function parseGMapsUrl(url) {
+      // Returns { points: Array<string|[lat,lng]>, fallbackCoords: Array<{lat,lng}> }
+      try {
+        const u = new URL(url);
+        const fallbackCoords = extractLatLngPairsFromUrl(url);
+
+        // api=1 format, may include &waypoints= a|b|c
+        if (u.searchParams.get('api') === '1' && (u.searchParams.get('origin') || u.searchParams.get('destination'))) {
+          const points = [];
+          const originRaw = u.searchParams.get('origin') || '';
+          const destRaw = u.searchParams.get('destination') || '';
+          const wpRaw = u.searchParams.get('waypoints') || '';
+
+          const pushSeg = (s) => {
+            if (!s) return;
+            const seg = s.replace(/^via:/i, '');
+            const ll = isLatLng(seg);
+            points.push(ll || decodeURIComponent(seg).trim());
+          };
+          pushSeg(originRaw);
+          if (wpRaw) {
+            wpRaw.split('|').forEach(w => pushSeg(w));
+          }
+          pushSeg(destRaw);
+
+          return { points, fallbackCoords };
+        }
+
+        // Path-style directions: /maps/dir/Stop0/Stop1/.../StopN
+        const path = u.pathname;
+        const dirIdx = path.indexOf('/maps/dir');
+        if (dirIdx !== -1) {
+          let segments = path
+            .slice(dirIdx + '/maps/dir'.length)
+            .split('/')
+            .map(s => s.trim());
+
+          // Stop at an '@' segment (Google map center) and drop empties like ''
+          const cutAt = segments.findIndex(s => s.startsWith('@'));
+          if (cutAt >= 0) segments = segments.slice(0, cutAt);
+          segments = segments.filter(Boolean);
+
+          // Decode and parse up to 10 points
+          const points = segments.slice(0, 10).map(s => {
+            const dec = decodeURIComponent(s);
+            if (dec.startsWith('loc:')) {
+              const ll = isLatLng(dec.slice(4));
+              return ll || dec; // fallback to string if invalid
+            }
+            return isLatLng(dec) || dec;
+          });
+
+          return { points, fallbackCoords };
+        }
+
+        return null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    async function geocodeIfNeeded(input) {
+      if (Array.isArray(input)) return { lat: input[0], lng: input[1] };
+      const query = String(input || '').trim();
+      if (!query) throw new Error('Empty stop value');
+
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1&addressdetails=0`;
+      const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
+      if (!resp.ok) throw new Error(`Geocoding failed (${resp.status})`);
+      const data = await resp.json();
+      if (!Array.isArray(data) || data.length === 0) throw new Error('No geocoding results');
+      const { lat, lon } = data[0];
+      return { lat: parseFloat(lat), lng: parseFloat(lon) };
+    }
+
+    async function fetchRouteForPoints(pointsLL) {
+      // pointsLL: array of {lat, lng} in order
+      if (!Array.isArray(pointsLL) || pointsLL.length < 2) throw new Error('Need at least 2 stops');
+      if (pointsLL.length > 10) throw new Error('Maximum 10 stops supported');
+
+      const coords = pointsLL.map(p => `${p.lng},${p.lat}`).join(';');
+      const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=false`; // ordered waypoints
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`Routing failed (${resp.status})`);
+      const data = await resp.json();
+      if (!data || data.code !== 'Ok' || !data.routes || !data.routes.length) throw new Error('No route found');
+      return data.routes[0].geometry; // GeoJSON LineString
+    }
+
+    function bufferRoute(lineGeom, radiusMeters) {
+      const line = turf.lineString(lineGeom.coordinates);
+      const radiusKm = (Number(radiusMeters) || 25) / 1000.0;
+      const buffered = turf.buffer(line, radiusKm, { units: 'kilometers', steps: 16 });
+      if (!buffered || !buffered.geometry) throw new Error('Buffering failed');
+      return buffered;
+    }
+
+    function render(lineGeom, bufferFeature) {
+      const map = state.map;
+      if (state.routeLayer) { map.removeLayer(state.routeLayer); state.routeLayer = null; }
+      if (state.bufferLayer) { map.removeLayer(state.bufferLayer); state.bufferLayer = null; }
+
+      state.routeLayer = L.geoJSON({ type: 'Feature', geometry: lineGeom }, {
+        style: { color: '#2563eb', weight: 4, opacity: 0.9 }
+      }).addTo(map);
+
+      state.bufferLayer = L.geoJSON(bufferFeature, {
+        style: { color: '#16a34a', weight: 2, opacity: 0.9, fillColor: '#22c55e', fillOpacity: 0.25 }
+      }).addTo(map);
+
+      const group = new L.FeatureGroup([state.bufferLayer, state.routeLayer]);
+      map.fitBounds(group.getBounds(), { padding: [20, 20] });
+
+      try {
+        document.getElementById('wktOut').value = wellknown.stringify(bufferFeature.geometry) || '';
+      } catch (e) {
+        document.getElementById('wktOut').value = 'WKT serialization failed: ' + e.message;
+      }
+    }
+
+    async function handleGo() {
+      clearError();
+      setLoading(true);
+      document.getElementById('wktOut').value = '';
+
+      try {
+        let url = (document.getElementById('gmapsUrl').value || '').trim();
+        if (!url) throw new Error('Please paste a Google Maps directions URL.');
+
+        // Resolve short links like maps.app.goo.gl
+        if (/maps\.app\.goo\.gl|goo\.gl\/maps/.test(url)) {
+          url = await resolveShortUrl(url);
+        }
+
+        const parsed = parseGMapsUrl(url);
+        if (!parsed || !parsed.points || parsed.points.length < 2) {
+          showError('INVALID_URL', 'Could not parse at least 2 stops from the directions URL.');
+          return;
+        }
+
+        const fallbackQueue = Array.from(parsed.fallbackCoords || []);
+
+        // Geocode all points (up to 10), using fallback coordinates from URL if geocoding fails
+        const limited = parsed.points.slice(0, 10);
+        const pointsLL = [];
+        for (let i = 0; i < limited.length; i++) {
+          const seg = limited[i];
+          try {
+            const ll = await geocodeIfNeeded(seg);
+            pointsLL.push(ll);
+          } catch (e) {
+            if (fallbackQueue.length) {
+              pointsLL.push(fallbackQueue.shift());
+            } else {
+              throw e; // rethrow if no fallback available
+            }
+          }
+        }
+
+        const lineGeom = await fetchRouteForPoints(pointsLL);
+        const radiusMeters = parseInt(document.getElementById('bufferRadius').value, 10) || 25;
+        const bufferFeature = bufferRoute(lineGeom, radiusMeters);
+
+        render(lineGeom, bufferFeature);
+      } catch (err) {
+        console.error(err);
+        showError('PROCESSING_ERROR', err.message || String(err));
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      initMap();
+      document.getElementById('goBtn').addEventListener('click', handleGo);
+      document.getElementById('gmapsUrl').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') handleGo();
+      });
+    });
+  </script>
+</body>
+</html>
