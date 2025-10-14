@@ -47,7 +47,6 @@
     .badge { display:inline-block; padding: 2px 8px; border-radius: 999px; background: #1f2937; color: var(--muted); font-size: 11px; margin-right:6px; }
 
     .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-    .row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
 
     /* Segmented toggle */
     .seg { display:inline-flex; background: #0b1220; border:1px solid var(--border); border-radius: 10px; overflow:hidden; }
@@ -64,9 +63,12 @@
     .bar { height:1px; background: var(--border); margin: 10px 0; }
 
     .export-row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-    .export-row .choice { display:flex; gap:10px; align-items:center; }
-    .export-row label { margin:0; }
-    .export-row input[type="radio"] { transform: translateY(1px); }
+
+    /* Marker numbers */
+    .num-marker { display:flex; align-items:center; justify-content:center; font-weight:700; color:#fff; background:#0ea5e9; border:2px solid #fff; border-radius:50%; width:28px; height:28px; box-shadow:0 1px 6px rgba(0,0,0,.35); }
+    .num-marker.origin { background:#22c55e; }
+    .num-marker.dest { background:#ef4444; }
+    .leaflet-tooltip.marker-label { background:#111827; border:1px solid #2b3747; color:#e5e7eb; padding:2px 6px; border-radius:6px; font-size:11px; }
   </style>
 </head>
 <body>
@@ -156,7 +158,7 @@
       </div>
 
       <div class="legend">
-        Pro tip: Switch formats to preview each representation. Download saves the currently selected format.
+        • Drag the numbered pins on the map to tweak stops; the route and buffer update automatically.\n• Switch formats to preview; Download saves the active format.
       </div>
     </div>
 
@@ -175,92 +177,59 @@
       map: null,
       routeLayer: null,
       bufferLayer: null,
-      lastRoute: null,        // GeoJSON LineString (geometry)
-      lastBuffer: null,       // GeoJSON Feature (Polygon/MultiPolygon)
+      markers: [],            // Leaflet markers for stops
+      lastPoints: null,       // Array<{lat,lng}> for current route
+      lastRoute: null,        // GeoJSON LineString
+      lastBuffer: null,       // Feature<Polygon|MultiPolygon>
       fallbackQueue: [],
       maxStops: 10,
-      mode: 'url',            // 'url' | 'manual'
+      mode: 'url',
     };
 
     // ---------- UI helpers ----------
     function setLoading(isLoading) {
       document.getElementById('loading').style.display = isLoading ? 'block' : 'none';
-      document.getElementById('parseBtn').disabled = isLoading || state.mode !== 'url';
+      const parseBtn = document.getElementById('parseBtn');
+      if (parseBtn) parseBtn.disabled = isLoading || state.mode !== 'url';
       document.getElementById('runBtn').disabled = isLoading;
     }
-
-    function showError(code, message, extra) {
-      const box = document.getElementById('errorBox');
-      box.style.display = 'block';
-      box.textContent = `[${code}] ${message}${extra ? `\n${extra}` : ''}`;
-    }
+    function showError(code, message, extra) { const box = document.getElementById('errorBox'); box.style.display='block'; box.textContent=`[${code}] ${message}${extra?`\n${extra}`:''}`; }
     function clearError() { const box = document.getElementById('errorBox'); box.style.display='none'; box.textContent=''; }
 
     // ---------- Map ----------
     function initMap() {
       state.map = L.map('map', { zoomControl: true }).setView([37.7749, -122.4194], 12);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
-      }).addTo(state.map);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(state.map);
     }
 
     // ---------- Parsing ----------
     function isLatLng(text) {
-      if (!text) return null;
-      const cleaned = decodeURIComponent(text).trim();
+      if (!text) return null; const cleaned = decodeURIComponent(text).trim();
       const m = cleaned.match(/^\s*(-?\d+(?:\.\d+)?)\s*[ ,]\s*(-?\d+(?:\.\d+)?)\s*$/);
-      if (!m) return null;
-      const lat = parseFloat(m[1]);
-      const lng = parseFloat(m[2]);
+      if (!m) return null; const lat = parseFloat(m[1]); const lng = parseFloat(m[2]);
       if (Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) return [lat, lng];
       return null;
     }
-
     function extractLatLngPairsFromUrl(url) {
-      const pairs = [];
-      const regex = /!1d(-?\d+(?:\.\d+)?)!2d(-?\d+(?:\.\d+)?)/g; // lon then lat
-      let m; while ((m = regex.exec(url)) !== null) {
-        const lon = parseFloat(m[1]); const lat = parseFloat(m[2]);
-        if (Number.isFinite(lat) && Number.isFinite(lon)) pairs.push({ lat, lng: lon });
-      }
+      const pairs = []; const regex = /!1d(-?\d+(?:\.\d+)?)!2d(-?\d+(?:\.\d+)?)/g; let m;
+      while ((m = regex.exec(url)) !== null) { const lon = parseFloat(m[1]); const lat = parseFloat(m[2]); if (Number.isFinite(lat) && Number.isFinite(lon)) pairs.push({ lat, lng: lon }); }
       return pairs;
     }
-
-    async function resolveShortUrl(url) {
-      try { const resp = await fetch(url, { redirect: 'follow', method: 'GET' }); return resp && resp.url ? resp.url : url; }
-      catch { return url; }
-    }
-
+    async function resolveShortUrl(url) { try { const resp = await fetch(url, { redirect: 'follow', method: 'GET' }); return resp && resp.url ? resp.url : url; } catch { return url; } }
     function parseGMapsUrl(url) {
-      // Returns { points: Array<string|[lat,lng]> }
       try {
         const u = new URL(url);
-
-        // api=1 flavor
         if (u.searchParams.get('api') === '1' && (u.searchParams.get('origin') || u.searchParams.get('destination'))) {
-          const points = [];
-          const originRaw = u.searchParams.get('origin') || '';
-          const destRaw = u.searchParams.get('destination') || '';
-          const wpRaw = u.searchParams.get('waypoints') || '';
+          const points = []; const originRaw = u.searchParams.get('origin') || ''; const destRaw = u.searchParams.get('destination') || ''; const wpRaw = u.searchParams.get('waypoints') || '';
           const pushSeg = (s) => { if (!s) return; const seg = s.replace(/^via:/i, ''); const ll = isLatLng(seg); points.push(ll || decodeURIComponent(seg).trim()); };
-          pushSeg(originRaw);
-          if (wpRaw) wpRaw.split('|').forEach(w => pushSeg(w));
-          pushSeg(destRaw);
-          return { points };
+          pushSeg(originRaw); if (wpRaw) wpRaw.split('|').forEach(w => pushSeg(w)); pushSeg(destRaw); return { points };
         }
-
-        // path-style /maps/dir/Stop0/Stop1/.../StopN
         const path = u.pathname; const dirIdx = path.indexOf('/maps/dir');
         if (dirIdx !== -1) {
           let segments = path.slice(dirIdx + '/maps/dir'.length).split('/').map(s => s.trim());
-          const cutAt = segments.findIndex(s => s.startsWith('@'));
-          if (cutAt >= 0) segments = segments.slice(0, cutAt);
+          const cutAt = segments.findIndex(s => s.startsWith('@')); if (cutAt >= 0) segments = segments.slice(0, cutAt);
           segments = segments.filter(Boolean);
-          const points = segments.slice(0, state.maxStops).map(s => {
-            const dec = decodeURIComponent(s);
-            if (dec.startsWith('loc:')) { const ll = isLatLng(dec.slice(4)); return ll || dec; }
-            return isLatLng(dec) || dec;
-          });
+          const points = segments.slice(0, state.maxStops).map(s => { const dec = decodeURIComponent(s); if (dec.startsWith('loc:')) { const ll = isLatLng(dec.slice(4)); return ll || dec; } return isLatLng(dec) || dec; });
           return { points };
         }
         return null;
@@ -269,43 +238,70 @@
 
     // ---------- Waypoint editor ----------
     function renderWaypointList(values) {
-      const list = document.getElementById('wpList');
-      list.innerHTML = '';
-      const arr = (values || []).slice(0, state.maxStops);
-      arr.forEach(v => addWaypointRow(v));
-      updateIndices();
+      const list = document.getElementById('wpList'); if (!list) return; list.innerHTML = '';
+      (values || []).slice(0, state.maxStops).forEach(v => addWaypointRow(v)); updateIndices();
     }
-
     function addWaypointRow(value='') {
-      const list = document.getElementById('wpList');
-      if (list.children.length >= state.maxStops) return;
-      const item = document.createElement('div'); item.className = 'wp-item';
-      item.innerHTML = `
+      const list = document.getElementById('wpList'); if (!list || list.children.length >= state.maxStops) return;
+      const item = document.createElement('div'); item.className = 'wp-item'; item.innerHTML = `
         <div class="index">1</div>
         <input type="text" class="wp-input" placeholder="Address, business name, or lat,lng" />
         <button class="ghost up" title="Move up">▲</button>
-        <button class="ghost del" title="Remove">✕</button>
-      `;
+        <button class="ghost del" title="Remove">✕</button>`;
       list.appendChild(item);
-      const input = item.querySelector('.wp-input');
-      input.value = typeof value === 'string' ? value : (Array.isArray(value) ? `${value[0]},${value[1]}` : value || '');
-      item.querySelector('.del').addEventListener('click', () => { item.remove(); updateIndices(); });
+      const input = item.querySelector('.wp-input'); input.value = typeof value === 'string' ? value : (Array.isArray(value) ? `${value[0]},${value[1]}` : value || '');
+      item.querySelector('.del').addEventListener('click', () => { item.remove(); updateIndices(); clearMarkers(); });
       item.querySelector('.up').addEventListener('click', () => { const prev = item.previousElementSibling; if (prev) list.insertBefore(item, prev); updateIndices(); });
       const downBtn = document.createElement('button'); downBtn.className='ghost'; downBtn.title='Move down'; downBtn.textContent='▼';
-      downBtn.addEventListener('click', () => { const next = item.nextElementSibling; if (next) list.insertBefore(next, item); updateIndices(); });
-      item.appendChild(downBtn);
-      updateIndices();
-      return item;
+      downBtn.addEventListener('click', () => { const next = item.nextElementSibling; if (next) list.insertBefore(next, item); updateIndices(); }); item.appendChild(downBtn);
+      updateIndices(); return item;
+    }
+    function updateIndices() { const list = document.getElementById('wpList'); if (!list) return; [...list.children].forEach((el, idx) => { el.querySelector('.index').textContent = String(idx+1); }); }
+    function getWaypointValues() { const inputs = document.querySelectorAll('.wp-input'); return [...inputs].map(inp => inp.value.trim()).filter(Boolean); }
+
+    // ---------- Map markers for stops ----------
+    function clearMarkers() { state.markers.forEach(m => state.map.removeLayer(m)); state.markers = []; }
+    function markerIcon(idx, total) {
+      const cls = idx === 0 ? 'origin' : (idx === total-1 ? 'dest' : '');
+      return L.divIcon({ className: '', html: `<div class="num-marker ${cls}">${idx+1}</div>`, iconSize: [28,28], iconAnchor: [14,14] });
+    }
+    function placeMarkers(points) {
+      clearMarkers(); if (!points || !points.length) return;
+      points.forEach((p, i) => {
+        const mk = L.marker([p.lat, p.lng], { draggable: true, icon: markerIcon(i, points.length) })
+          .addTo(state.map)
+          .bindTooltip(`Stop ${i+1}`, { permanent: true, direction: 'top', className: 'marker-label', offset: [0,-12] });
+        mk.on('dragend', (e) => onMarkerDragEnd(i, e));
+        state.markers.push(mk);
+      });
+    }
+    function refreshMarkerIcons() {
+      const total = state.markers.length; state.markers.forEach((m, i) => { m.setIcon(markerIcon(i, total)); m.setTooltipContent(`Stop ${i+1}`); });
+    }
+    async function onMarkerDragEnd(idx, e) {
+      try {
+        const { lat, lng } = e.target.getLatLng();
+        if (!Array.isArray(state.lastPoints) || !state.lastPoints[idx]) return;
+        state.lastPoints[idx] = { lat, lng };
+        // Push lat,lng back to editor row
+        const inputs = document.querySelectorAll('.wp-input'); if (inputs[idx]) inputs[idx].value = `${lat.toFixed(6)},${lng.toFixed(6)}`;
+        // Recompute route & buffer using the updated points (no geocoding required)
+        await rerouteFromLastPoints();
+      } catch (err) { console.error(err); showError('DRAG_ERROR', err.message || String(err)); }
     }
 
-    function updateIndices() {
-      const list = document.getElementById('wpList');
-      [...list.children].forEach((el, idx) => { el.querySelector('.index').textContent = String(idx+1); });
-    }
-
-    function getWaypointValues() {
-      const inputs = document.querySelectorAll('.wp-input');
-      return [...inputs].map(inp => inp.value.trim()).filter(v => v.length>0);
+    async function rerouteFromLastPoints() {
+      setLoading(true); clearError();
+      try {
+        if (!state.lastPoints || state.lastPoints.length < 2) throw new Error('Need at least 2 stops');
+        const lineGeom = await fetchRouteForPoints(state.lastPoints);
+        const radiusMeters = parseInt(document.getElementById('bufferRadius').value, 10) || 25;
+        const bufferFeature = bufferRoute(lineGeom, radiusMeters);
+        render(lineGeom, bufferFeature);
+        // Reposition markers (in case OSRM snapped route suggests different bounds; we keep user positions)
+        placeMarkers(state.lastPoints);
+      } catch (e) { console.error(e); showError('PROCESSING_ERROR', e.message || String(e)); }
+      finally { setLoading(false); }
     }
 
     // ---------- Geocoding & Routing ----------
@@ -314,218 +310,94 @@
       const ll = isLatLng(input); if (ll) return { lat: ll[0], lng: ll[1] };
       const query = String(input || '').trim(); if (!query) throw new Error('Empty stop value');
       const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1&addressdetails=0`;
-      const resp = await fetch(url, { headers: { 'Accept': 'application/json' } });
-      if (!resp.ok) throw new Error(`Geocoding failed (${resp.status})`);
-      const data = await resp.json();
-      if (!Array.isArray(data) || data.length === 0) throw new Error('No geocoding results');
-      const { lat, lon } = data[0];
-      return { lat: parseFloat(lat), lng: parseFloat(lon) };
+      const resp = await fetch(url, { headers: { 'Accept': 'application/json' } }); if (!resp.ok) throw new Error(`Geocoding failed (${resp.status})`);
+      const data = await resp.json(); if (!Array.isArray(data) || data.length === 0) throw new Error('No geocoding results');
+      const { lat, lon } = data[0]; return { lat: parseFloat(lat), lng: parseFloat(lon) };
     }
-
     async function fetchRouteForPoints(pointsLL) {
       if (!Array.isArray(pointsLL) || pointsLL.length < 2) throw new Error('Need at least 2 stops');
       if (pointsLL.length > state.maxStops) throw new Error(`Maximum ${state.maxStops} stops supported`);
       const coords = pointsLL.map(p => `${p.lng},${p.lat}`).join(';');
       const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=false`;
-      const resp = await fetch(url);
-      if (!resp.ok) throw new Error(`Routing failed (${resp.status})`);
-      const data = await resp.json();
-      if (!data || data.code !== 'Ok' || !data.routes || !data.routes.length) throw new Error('No route found');
+      const resp = await fetch(url); if (!resp.ok) throw new Error(`Routing failed (${resp.status})`);
+      const data = await resp.json(); if (!data || data.code !== 'Ok' || !data.routes || !data.routes.length) throw new Error('No route found');
       return data.routes[0].geometry;
     }
-
     function bufferRoute(lineGeom, radiusMeters) {
-      const line = turf.lineString(lineGeom.coordinates);
-      const radiusKm = (Number(radiusMeters) || 25) / 1000.0;
-      const buffered = turf.buffer(line, radiusKm, { units: 'kilometers', steps: 16 });
-      if (!buffered || !buffered.geometry) throw new Error('Buffering failed');
+      const line = turf.lineString(lineGeom.coordinates); const radiusKm = (Number(radiusMeters) || 25) / 1000.0;
+      const buffered = turf.buffer(line, radiusKm, { units: 'kilometers', steps: 16 }); if (!buffered || !buffered.geometry) throw new Error('Buffering failed');
       return buffered;
     }
 
     function render(lineGeom, bufferFeature) {
-      const map = state.map;
-      if (state.routeLayer) { map.removeLayer(state.routeLayer); state.routeLayer = null; }
-      if (state.bufferLayer) { map.removeLayer(state.bufferLayer); state.bufferLayer = null; }
+      const map = state.map; if (state.routeLayer) { map.removeLayer(state.routeLayer); state.routeLayer = null; } if (state.bufferLayer) { map.removeLayer(state.bufferLayer); state.bufferLayer = null; }
       state.routeLayer = L.geoJSON({ type: 'Feature', geometry: lineGeom }, { style: { color: '#2563eb', weight: 4, opacity: 0.9 } }).addTo(map);
       state.bufferLayer = L.geoJSON(bufferFeature, { style: { color: '#16a34a', weight: 2, opacity: 0.9, fillColor: '#22c55e', fillOpacity: 0.25 } }).addTo(map);
-      const group = new L.FeatureGroup([state.bufferLayer, state.routeLayer]);
+      const group = new L.FeatureGroup([state.bufferLayer, state.routeLayer, ...state.markers]);
       map.fitBounds(group.getBounds(), { padding: [20, 20] });
-      state.lastRoute = lineGeom; state.lastBuffer = bufferFeature;
-      updateOutputText();
+      state.lastRoute = lineGeom; state.lastBuffer = bufferFeature; updateOutputText(); refreshMarkerIcons();
     }
 
     // ---------- Output / Export ----------
-    function pickExportGeometry() {
-      const choice = document.querySelector('input[name="exportGeom"]:checked')?.value || 'buffer';
-      if (choice === 'route') {
-        if (!state.lastRoute) throw new Error('No route available');
-        return { type: 'Feature', properties: {}, geometry: state.lastRoute };
-      } else {
-        if (!state.lastBuffer) throw new Error('No buffer available');
-        return state.lastBuffer; // Feature
-      }
-    }
-
+    function pickExportGeometry() { const choice = document.querySelector('input[name="exportGeom"]:checked')?.value || 'buffer'; if (choice === 'route') { if (!state.lastRoute) throw new Error('No route available'); return { type: 'Feature', properties: {}, geometry: state.lastRoute }; } else { if (!state.lastBuffer) throw new Error('No buffer available'); return state.lastBuffer; } }
     function toKML(feature) {
-      const geom = feature.geometry || feature;
-      const esc = (s) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      const geom = feature.geometry || feature; const esc = (s) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
       function coordsToStr(coords) { return coords.map(c => `${c[0]},${c[1]},0`).join(' '); }
       function closeRing(r) { if (r.length && (r[0][0]!==r[r.length-1][0] || r[0][1]!==r[r.length-1][1])) return [...r, r[0]]; return r; }
-      function polygonToKML(coords) {
-        const outer = coords[0]; const inner = coords.slice(1);
-        let k = `<outerBoundaryIs><LinearRing><coordinates>${coordsToStr(closeRing(outer))}</coordinates></LinearRing></outerBoundaryIs>`;
-        inner.forEach(hole => { k += `<innerBoundaryIs><LinearRing><coordinates>${coordsToStr(closeRing(hole))}</coordinates></LinearRing></innerBoundaryIs>`; });
-        return `<Polygon>${k}</Polygon>`;
-      }
-      let geomKml = '';
-      if (geom.type === 'LineString') {
-        geomKml = `<LineString><coordinates>${coordsToStr(geom.coordinates)}</coordinates></LineString>`;
-      } else if (geom.type === 'Polygon') {
-        geomKml = polygonToKML(geom.coordinates);
-      } else if (geom.type === 'MultiPolygon') {
-        geomKml = geom.coordinates.map(poly => `<Placemark>${polygonToKML(poly)}</Placemark>`).join('');
-      } else { throw new Error('KML format supports LineString, Polygon, MultiPolygon'); }
-      const name = feature.properties?.name || 'Export';
-      const placemark = geom.type === 'MultiPolygon' ? geomKml : `<Placemark><name>${esc(name)}</name>${geomKml}</Placemark>`;
-      return `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document>${placemark}</Document></kml>`;
+      function polygonToKML(coords) { const outer = coords[0]; const inner = coords.slice(1); let k = `<outerBoundaryIs><LinearRing><coordinates>${coordsToStr(closeRing(outer))}</coordinates></LinearRing></outerBoundaryIs>`; inner.forEach(hole => { k += `<innerBoundaryIs><LinearRing><coordinates>${coordsToStr(closeRing(hole))}</coordinates></LinearRing></innerBoundaryIs>`; }); return `<Polygon>${k}</Polygon>`; }
+      let geomKml = ''; if (geom.type === 'LineString') { geomKml = `<LineString><coordinates>${coordsToStr(geom.coordinates)}</coordinates></LineString>`; } else if (geom.type === 'Polygon') { geomKml = polygonToKML(geom.coordinates); } else if (geom.type === 'MultiPolygon') { geomKml = geom.coordinates.map(poly => `<Placemark>${polygonToKML(poly)}</Placemark>`).join(''); } else { throw new Error('KML format supports LineString, Polygon, MultiPolygon'); }
+      const name = feature.properties?.name || 'Export'; const placemark = geom.type === 'MultiPolygon' ? geomKml : `<Placemark><name>${esc(name)}</name>${geomKml}</Placemark>`; return `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document>${placemark}</Document></kml>`;
     }
-
-    function updateOutputText() {
-      const fmt = document.querySelector('input[name="exportFmt"]:checked')?.value || 'wkt';
-      const txt = document.getElementById('outputText');
-      try {
-        const feat = pickExportGeometry();
-        if (fmt === 'wkt') {
-          const w = wellknown.stringify(feat.geometry);
-          txt.value = w || '';
-        } else if (fmt === 'geojson') {
-          txt.value = JSON.stringify(feat, null, 2);
-        } else if (fmt === 'kml') {
-          txt.value = toKML(feat);
-        }
-      } catch (e) {
-        txt.value = 'Output unavailable: ' + (e.message || String(e));
-      }
-    }
-
-    function downloadCurrent() {
-      const fmt = document.querySelector('input[name="exportFmt"]:checked')?.value || 'wkt';
-      let mime = 'text/plain', ext = 'txt';
-      if (fmt === 'wkt') { mime = 'text/plain'; ext = 'wkt'; }
-      if (fmt === 'geojson') { mime = 'application/geo+json'; ext = 'geojson'; }
-      if (fmt === 'kml') { mime = 'application/vnd.google-earth.kml+xml'; ext = 'kml'; }
-      const text = document.getElementById('outputText').value || '';
-      if (!text) { showError('EXPORT_ERROR', 'Nothing to download. Run Route & Buffer first.'); return; }
-      const geom = document.querySelector('input[name="exportGeom"]:checked')?.value || 'buffer';
-      const filename = `export_${geom}.${ext}`;
-      const blob = new Blob([text], { type: mime });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-    }
+    function updateOutputText() { const fmt = document.querySelector('input[name="exportFmt"]:checked')?.value || 'wkt'; const txt = document.getElementById('outputText'); try { const feat = pickExportGeometry(); if (fmt === 'wkt') { const w = wellknown.stringify(feat.geometry); txt.value = w || ''; } else if (fmt === 'geojson') { txt.value = JSON.stringify(feat, null, 2); } else if (fmt === 'kml') { txt.value = toKML(feat); } } catch (e) { txt.value = 'Output unavailable: ' + (e.message || String(e)); } }
+    function downloadCurrent() { const fmt = document.querySelector('input[name="exportFmt"]:checked')?.value || 'wkt'; let mime='text/plain', ext='txt'; if (fmt==='wkt'){mime='text/plain';ext='wkt';} if (fmt==='geojson'){mime='application/geo+json';ext='geojson';} if (fmt==='kml'){mime='application/vnd.google-earth.kml+xml';ext='kml';} const text = document.getElementById('outputText').value || ''; if (!text) { showError('EXPORT_ERROR','Nothing to download. Run Route & Buffer first.'); return; } const geom = document.querySelector('input[name="exportGeom"]:checked')?.value || 'buffer'; const filename = `export_${geom}.${ext}`; const blob = new Blob([text], { type: mime }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); }
 
     // ---------- Actions ----------
     async function handleParse() {
       clearError(); setLoading(true); state.fallbackQueue = []; try {
-        let url = (document.getElementById('gmapsUrl').value || '').trim();
-        if (!url) throw new Error('Please paste a Google Maps directions URL.');
+        let url = (document.getElementById('gmapsUrl').value || '').trim(); if (!url) throw new Error('Please paste a Google Maps directions URL.');
         if (/maps\.app\.goo\.gl|goo\.gl\/maps/.test(url)) url = await resolveShortUrl(url);
         state.fallbackQueue = extractLatLngPairsFromUrl(url);
-        const parsed = parseGMapsUrl(url);
-        if (!parsed || !parsed.points || parsed.points.length < 2) { showError('INVALID_URL', 'Could not parse at least 2 stops from the URL.'); return; }
-        renderWaypointList(parsed.points);
-        // After parsing, switch to manual mode so user can edit
-        setMode('manual');
+        const parsed = parseGMapsUrl(url); if (!parsed || !parsed.points || parsed.points.length < 2) { showError('INVALID_URL','Could not parse at least 2 stops from the URL.'); return; }
+        renderWaypointList(parsed.points); setMode('manual'); // switch to manual for edits
+        clearMarkers();
       } catch (e) { console.error(e); showError('PARSE_ERROR', e.message || String(e)); }
       finally { setLoading(false); }
     }
 
     async function handleRun() {
-      clearError(); setLoading(true); document.getElementById('outputText').value='';
-      try {
-        // Gather stops depending on mode
-        let values = [];
-        if (state.mode === 'url') {
-          // Use whatever is currently in editor if any, else attempt to parse URL immediately
-          values = getWaypointValues();
-          if (values.length < 2) {
-            // try quick-parse from URL
-            let url = (document.getElementById('gmapsUrl').value || '').trim();
-            if (!url) throw new Error('Paste a URL or switch to Manual mode to enter stops.');
-            if (/maps\.app\.goo\.gl|goo\.gl\/maps/.test(url)) url = await resolveShortUrl(url);
-            state.fallbackQueue = extractLatLngPairsFromUrl(url);
-            const parsed = parseGMapsUrl(url);
-            if (!parsed || !parsed.points || parsed.points.length < 2) throw new Error('Could not parse at least 2 stops from the URL.');
-            renderWaypointList(parsed.points); // keep editor in sync
-            values = parsed.points;
-          }
-        } else {
-          values = getWaypointValues();
-        }
-
-        if (values.length < 2) throw new Error('Add at least origin and destination');
-        if (values.length > state.maxStops) throw new Error(`Maximum ${state.maxStops} stops supported`);
-
-        // Geocode with fallback to extracted coords
-        const fbq = [...state.fallbackQueue];
-        const pointsLL = [];
-        for (let i = 0; i < values.length; i++) {
-          const seg = values[i];
-          try { pointsLL.push(await geocodeIfNeeded(seg)); }
-          catch (e) { if (fbq.length) pointsLL.push(fbq.shift()); else throw e; }
-        }
-
+      clearError(); setLoading(true); document.getElementById('outputText').value=''; try {
+        // Collect stops based on current mode/editor
+        let values = []; if (state.mode === 'url') { values = getWaypointValues(); if (values.length < 2) { let url = (document.getElementById('gmapsUrl').value || '').trim(); if (!url) throw new Error('Paste a URL or switch to Manual mode to enter stops.'); if (/maps\.app\.goo\.gl|goo\.gl\/maps/.test(url)) url = await resolveShortUrl(url); state.fallbackQueue = extractLatLngPairsFromUrl(url); const parsed = parseGMapsUrl(url); if (!parsed || !parsed.points || parsed.points.length < 2) throw new Error('Could not parse at least 2 stops from the URL.'); renderWaypointList(parsed.points); values = parsed.points; } } else { values = getWaypointValues(); }
+        if (values.length < 2) throw new Error('Add at least origin and destination'); if (values.length > state.maxStops) throw new Error(`Maximum ${state.maxStops} stops supported`);
+        // Geocode with fallback
+        const fbq = [...state.fallbackQueue]; const pointsLL = []; for (let i=0;i<values.length;i++){ const seg=values[i]; try { pointsLL.push(await geocodeIfNeeded(seg)); } catch(e){ if (fbq.length) pointsLL.push(fbq.shift()); else throw e; } }
+        state.lastPoints = pointsLL; // store for drag updates
         const lineGeom = await fetchRouteForPoints(pointsLL);
-        const radiusMeters = parseInt(document.getElementById('bufferRadius').value, 10) || 25;
-        const bufferFeature = bufferRoute(lineGeom, radiusMeters);
-        render(lineGeom, bufferFeature);
+        const radiusMeters = parseInt(document.getElementById('bufferRadius').value, 10) || 25; const bufferFeature = bufferRoute(lineGeom, radiusMeters);
+        render(lineGeom, bufferFeature); placeMarkers(pointsLL);
       } catch (e) { console.error(e); showError('PROCESSING_ERROR', e.message || String(e)); }
       finally { setLoading(false); }
     }
 
     function setMode(mode) {
-      state.mode = mode;
-      const btnUrl = document.getElementById('modeUrl');
-      const btnManual = document.getElementById('modeManual');
-      const urlSection = document.getElementById('urlSection');
-      const manualSection = document.getElementById('manualSection');
-      if (mode === 'url') {
-        btnUrl.classList.add('active'); btnUrl.setAttribute('aria-selected','true');
-        btnManual.classList.remove('active'); btnManual.setAttribute('aria-selected','false');
-        urlSection.style.display='block';
-        manualSection.style.display='none';
-      } else {
-        btnManual.classList.add('active'); btnManual.setAttribute('aria-selected','true');
-        btnUrl.classList.remove('active'); btnUrl.setAttribute('aria-selected','false');
-        urlSection.style.display='none';
-        manualSection.style.display='block';
-        // Ensure at least two rows exist in manual mode for convenience
-        const list = document.getElementById('wpList');
-        if (list.children.length < 2) { addWaypointRow(''); addWaypointRow(''); }
-      }
+      state.mode = mode; const btnUrl = document.getElementById('modeUrl'); const btnManual = document.getElementById('modeManual'); const urlSection = document.getElementById('urlSection'); const manualSection = document.getElementById('manualSection');
+      if (mode === 'url') { btnUrl.classList.add('active'); btnUrl.setAttribute('aria-selected','true'); btnManual.classList.remove('active'); btnManual.setAttribute('aria-selected','false'); urlSection.style.display='block'; manualSection.style.display='none'; }
+      else { btnManual.classList.add('active'); btnManual.setAttribute('aria-selected','true'); btnUrl.classList.remove('active'); btnUrl.setAttribute('aria-selected','false'); urlSection.style.display='none'; manualSection.style.display='block'; const list = document.getElementById('wpList'); if (list.children.length < 2) { addWaypointRow(''); addWaypointRow(''); } }
       setLoading(false);
     }
 
     // ---------- Wire up ----------
     window.addEventListener('DOMContentLoaded', () => {
       initMap();
-      // Mode toggle
       document.getElementById('modeUrl').addEventListener('click', () => setMode('url'));
       document.getElementById('modeManual').addEventListener('click', () => setMode('manual'));
-
-      // URL parse + run
       document.getElementById('parseBtn').addEventListener('click', handleParse);
       document.getElementById('runBtn').addEventListener('click', handleRun);
-
-      // Manual editor actions
       document.getElementById('addStopBtn').addEventListener('click', () => addWaypointRow(''));
-      document.getElementById('clearStopsBtn').addEventListener('click', () => { document.getElementById('wpList').innerHTML=''; addWaypointRow(''); addWaypointRow(''); updateIndices(); });
-
-      // Output events
+      document.getElementById('clearStopsBtn').addEventListener('click', () => { const list = document.getElementById('wpList'); list.innerHTML=''; addWaypointRow(''); addWaypointRow(''); updateIndices(); clearMarkers(); });
       document.querySelectorAll('input[name="exportGeom"]').forEach(r => r.addEventListener('change', updateOutputText));
       document.querySelectorAll('input[name="exportFmt"]').forEach(r => r.addEventListener('change', updateOutputText));
       document.getElementById('downloadBtn').addEventListener('click', downloadCurrent);
-
-      // Start with two empty rows (in case user switches to Manual immediately)
       addWaypointRow(''); addWaypointRow('');
     });
   </script>
