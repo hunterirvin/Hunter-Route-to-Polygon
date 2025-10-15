@@ -351,12 +351,42 @@
     async function downloadCurrent(){ var fmtEl=document.querySelector('input[name="exportFmt"]:checked'); var fmt=fmtEl?fmtEl.value:'wkt'; if(fmt==='shp'){ return downloadShapefile(); } var mime='text/plain', ext='txt'; if(fmt==='wkt'){ mime='text/plain'; ext='wkt'; } if(fmt==='geojson'){ mime='application/geo+json'; ext='geojson'; } if(fmt==='kml'){ mime='application/vnd.google-earth.kml+xml'; ext='kml'; } var text=document.getElementById('outputText').value||''; if(!text){ showError('EXPORT_ERROR','Nothing to download. Run first.'); return; } var geomEl=document.querySelector('input[name="exportGeom"]:checked'); var geom=(geomEl?geomEl.value:'buffer'); var filename='export_'+geom+'.'+ext; var blob=new Blob([text],{type:mime}); var url=URL.createObjectURL(blob); var a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); }
 
     // Shapefile loader (dynamic, two-CDN fallback)
-    async function ensureShpWriteLoaded(){ if(typeof window.shpwrite!=='undefined') return window.shpwrite; var tried=[]; async function load(src){ return new Promise(function(res,rej){ var s=document.createElement('script'); s.src=src; s.async=true; s.onload=function(){ res(true); }; s.onerror=function(){ rej(new Error('Failed '+src)); }; document.head.appendChild(s); }); }
-      var cdns=[ 'https://cdn.jsdelivr.net/npm/shp-write@0.3.3/shpwrite.js', 'https://unpkg.com/shp-write@0.3.3/shpwrite.js' ];
-      for(var i=0;i<cdns.length;i++){ var u=cdns[i]; tried.push(u); try{ await load(u); if(typeof window.shpwrite!=='undefined') return window.shpwrite; }catch(e){} }
-      throw new Error('Could not load shp-write from: '+tried.join(', ')); }
-
-    async function downloadShapefile(){ try{ await ensureShpWriteLoaded(); if(typeof shpwrite==='undefined'){ showError('EXPORT_ERROR','Shapefile support not loaded.'); return; } var feat=pickExportGeometry(); var fc={ type:'FeatureCollection', features:[feat] }; var gtype=feat && feat.geometry ? feat.geometry.type : 'geometry'; var layerName='export_'+gtype.toLowerCase(); var zip=shpwrite.zip(fc, { folder:'shapefile', types:{} }); var blob= zip instanceof Blob ? zip : new Blob([zip],{type:'application/zip'}); var a=document.createElement('a'); var url=URL.createObjectURL(blob); a.href=url; a.download=layerName+'.zip'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); } catch(e){ console.error(e); showError('EXPORT_ERROR', e.message||String(e)); } }
+    
+    // Shapefile loader (dynamic, multi-CDN + multi-package fallback)
+    async function ensureShpWriteLoaded(){
+      if(typeof window.shpwrite !== 'undefined') return window.shpwrite;
+      const tried = [];
+      function load(src){
+        return new Promise((res, rej) => {
+          const s = document.createElement('script');
+          s.src = src; s.async = true;
+          s.onload = () => res(true);
+          s.onerror = () => rej(new Error('Failed '+src));
+          document.head.appendChild(s);
+        });
+      }
+      // Primary: official package moved to @mapbox/shp-write
+      const cdns = [
+        'https://unpkg.com/@mapbox/shp-write@0.4.3/shpwrite.js',
+        'https://unpkg.com/@mapbox/shp-write@latest/shpwrite.js',
+        'https://cdn.jsdelivr.net/npm/@mapbox/shp-write@0.4.3/shpwrite.js',
+        'https://cdn.jsdelivr.net/npm/@mapbox/shp-write@latest/shpwrite.js',
+        // Legacy package (deprecated, kept as deep fallback)
+        'https://unpkg.com/shp-write@0.3.2/shpwrite.js',
+        'https://cdn.jsdelivr.net/npm/shp-write@0.3.2/shpwrite.js',
+        // Community-maintained mirrors (additional safety net)
+        'https://cdn.jsdelivr.net/npm/@nickrsan/shp-write@0.3.7/shpwrite.js',
+        'https://unpkg.com/@nickrsan/shp-write@0.3.7/shpwrite.js',
+        'https://cdn.jsdelivr.net/npm/@simwrapper/shp-write@0.3.3/shpwrite.js',
+        'https://unpkg.com/@simwrapper/shp-write@0.3.3/shpwrite.js'
+      ];
+      for(const url of cdns){
+        tried.push(url);
+        try{ await load(url); if(typeof window.shpwrite !== 'undefined') return window.shpwrite; } catch(e) { /* try next */ }
+      }
+      throw new Error('Could not load shp-write from: '+tried.join(', '));
+    }
+async function downloadShapefile(){ try{ await ensureShpWriteLoaded(); if(typeof shpwrite==='undefined'){ showError('EXPORT_ERROR','Shapefile support not loaded.'); return; } var feat=pickExportGeometry(); var fc={ type:'FeatureCollection', features:[feat] }; var gtype=feat && feat.geometry ? feat.geometry.type : 'geometry'; var layerName='export_'+gtype.toLowerCase(); var zip=shpwrite.zip(fc, { folder:'shapefile', types:{} }); var blob= zip instanceof Blob ? zip : new Blob([zip],{type:'application/zip'}); var a=document.createElement('a'); var url=URL.createObjectURL(blob); a.href=url; a.download=layerName+'.zip'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); } catch(e){ console.error(e); showError('EXPORT_ERROR', e.message||String(e)); } }
 
     // -------- Actions --------
     async function handleParse(){ clearError(); setLoading(true); state.fallbackQueue=[]; try{ var url=(document.getElementById('gmapsUrl').value||'').trim(); if(!url) throw new Error('Please paste a Google Maps directions URL.'); if(/maps\.app\.goo\.gl|goo\.gl\/maps/.test(url)) url=await resolveShortUrl(url); state.fallbackQueue=extractLatLngPairsFromUrl(url); var parsed=parseGMapsUrl(url); if(!parsed||!parsed.points||parsed.points.length<2){ showError('INVALID_URL','Could not parse at least 2 stops from the URL.'); return; } renderWaypointList(parsed.points); setMode('manual'); // drop pins before routing
