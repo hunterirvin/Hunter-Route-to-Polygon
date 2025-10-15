@@ -3,76 +3,101 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Route Buffer Visualizer</title>
+  <title>Zone Widget</title>
   <!-- Leaflet core -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
   <!-- Leaflet.draw for polygon drawing in Regions mode -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
   <style>
-    :root { --bg:#0f172a; --panel:#111827; --text:#e5e7eb; --muted:#9ca3af; --accent:#22c55e; --accent-2:#3b82f6; --danger:#ef4444; --danger-border:#dc2626; --border:#1f2937; --chip:#0b1220; }
+    /* ---------- THEME (UI is always dark) ---------- */
+    :root {
+      --bg:#0f172a; --panel:#111827; --text:#e5e7eb; --muted:#9ca3af;
+      --accent:#22c55e; --accent-2:#3b82f6; --danger:#ef4444; --danger-border:#dc2626;
+      --border:#1f2937; --chip:#0b1220; --highlight:#93c5fd; /* lighter highlight */
+      --shadow: 0 8px 24px rgba(0,0,0,.35);
+    }
+
     * { box-sizing:border-box }
-    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"; background:var(--bg); color:var(--text) }
-    header { padding:16px 20px; border-bottom:1px solid var(--border); background:#0b1220; position:sticky; top:0; z-index:10 }
-    header h1 { margin:0; font-size:20px; font-weight:700; letter-spacing:.25px }
-    main { display:grid; grid-template-columns:520px 1fr; gap:16px; height:calc(100vh - 58px) }
+    body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,Helvetica,Arial; background:var(--bg); color:var(--text) }
+    header { padding:12px 16px; border-bottom:1px solid var(--border); background:var(--panel); position:sticky; top:0; z-index:10; display:flex; align-items:center; justify-content:space-between }
+    header h1 { margin:0; font-size:18px; font-weight:800; letter-spacing:.25px }
+    .theme-toggle { display:flex; align-items:center; gap:8px }
+    .toggle { border:1px solid var(--border); background:transparent; color:var(--text); padding:6px 10px; border-radius:999px; cursor:pointer }
+    .toggle:hover { background:var(--chip) }
+
+    main { display:grid; grid-template-columns:520px 1fr; gap:16px; height:calc(100vh - 54px) }
     @media (max-width:1100px){ main{ grid-template-columns:1fr; height:auto } #map{ height:60vh } }
     .panel { padding:16px; border-right:1px solid var(--border); overflow:auto; background:var(--panel) }
     .section { margin-bottom:16px }
+    .section-title { font-size:14px; font-weight:800; margin:18px 0 8px 0 }
+    .sub-title { font-size:13px; font-weight:700; margin:10px 0 6px 0; color:var(--text) }
+    .subtle { font-size:12px; font-weight:700; margin:8px 0 6px 0; color:var(--muted) }
+
     label { display:block; font-size:12px; color:var(--muted); margin-bottom:6px }
-    input[type=text], select, input[type=number] { width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--border); background:#0b1220; color:var(--text) }
+    input[type=text], select, input[type=number] { width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--border); background:var(--chip); color:var(--text) }
     button { padding:8px 12px; border-radius:8px; border:1px solid transparent; background:var(--accent); color:#052e16; font-weight:700; cursor:pointer }
     button.secondary { background:#1f2937; color:var(--text); border-color:#2b3747 }
     button.blue { background:var(--accent-2); color:#031633; border-color:#1d4ed8 }
-    button.ghost { background:transparent; border:1px solid #2b3747; color:var(--muted) }
+    button.ghost { background:transparent; border:1px solid var(--border); color:var(--muted) }
     button.danger { background:var(--danger); color:#fff; border-color:var(--danger-border) }
-    button:disabled { opacity:.6; cursor:not-allowed }
-    #loading { display:none; font-size:12px; color:var(--muted); margin-top:6px }
-    #map { height:calc(100vh - 58px) }
-    textarea { width:100%; min-height:160px; padding:10px 12px; border-radius:8px; border:1px solid var(--border); background:#0b1220; color:var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace }
-    .error { display:none; margin-top:8px; padding:10px 12px; border-radius:8px; background:rgba(239,68,68,.1); border:1px solid rgba(239,68,68,.35); color:#fecaca; font-size:13px; white-space:pre-wrap }
-    .legend { font-size:12px; color:var(--muted); margin-top:8px }
-    .badge { display:inline-block; padding:2px 8px; border-radius:999px; background:#1f2937; color:var(--muted); font-size:11px; margin-right:6px }
-    .row { display:grid; grid-template-columns:1fr 1fr; gap:8px }
-    .row-3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px }
-    .seg { display:inline-flex; background:#0b1220; border:1px solid var(--border); border-radius:10px; overflow:hidden }
-    .seg button { border:none; background:transparent; color:var(--muted); padding:8px 12px; font-weight:600 }
-    .seg button.active { background:#172033; color:#e5e7eb }
-    details.adv { border:1px solid var(--border); border-radius:10px; padding:10px 12px; background:#0b1220 }
-    details.adv > summary { cursor:pointer; font-weight:700; color:#cbd5e1; outline:none }
+    button:hover, .seg button:hover, .ghost:hover { filter:brightness(1.02); box-shadow:var(--shadow) }
+    button:disabled { opacity:.6; cursor:not-allowed; box-shadow:none }
+    .seg button.active, .mode-toggle .active, .regions-toggle .active, .toggle.active, .toggle:focus { outline:2px solid var(--highlight); background:rgba(147,197,253,.12); color:var(--text) }
 
-    /* Waypoint one-line layout */
+    #loading { display:none; font-size:12px; color:var(--muted); margin-top:6px }
+    #map { height:calc(100vh - 54px) }
+    textarea { width:100%; min-height:160px; padding:10px 12px; border-radius:8px; border:1px solid var(--border); background:var(--chip); color:var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace }
+    .error { display:none; margin-top:8px; padding:10px 12px; border-radius:8px; background:rgba(239,68,68,.1); border:1px solid rgba(239,68,68,.35); color:#b91c1c; font-size:13px; white-space:pre-wrap }
+    .legend { font-size:12px; color:var(--muted); margin-top:8px }
+    .small { font-size:12px }
+
+    .mode-toggle, .regions-toggle { display:inline-flex; background:var(--chip); border:1px solid var(--border); border-radius:10px; overflow:hidden }
+    .mode-toggle button, .regions-toggle button { border:none; background:transparent; color:var(--muted); padding:8px 12px; font-weight:600 }
+
+    /* Waypoints, one line */
     .wp-header { display:flex; justify-content:space-between; align-items:center; margin:8px 0 }
     .wp-list { display:flex; flex-direction:column; gap:8px }
     .wp-item { display:grid; grid-template-columns:28px 1fr 28px 28px 28px; gap:6px; align-items:center; padding:6px; border:1px solid var(--border); border-radius:8px; background:var(--chip); position:relative }
     .wp-item .index { width:28px; height:28px; display:flex; align-items:center; justify-content:center; font-size:12px; color:#cbd5e1; background:#111827; border-radius:6px }
     .wp-item button { padding:4px 0; height:30px }
 
-    /* Typeahead dropdown */
-    .ta { position:absolute; left:60px; right:96px; top:40px; background:#0b1220; border:1px solid #334155; border-radius:8px; z-index:20; max-height:220px; overflow:auto; box-shadow:0 6px 18px rgba(0,0,0,.35) }
-    .ta-item { padding:8px 10px; font-size:13px; color:#e5e7eb; cursor:pointer }
-    .ta-item:hover, .ta-item.active { background:#172033 }
+    /* Typeahead: attach to a relative wrapper below the input */
+    .ta-wrap { position:relative }
+    .ta { position:absolute; left:0; right:0; top:calc(100% + 4px); background:var(--panel); border:1px solid var(--border); border-radius:8px; z-index:20; max-height:240px; overflow:auto; box-shadow:var(--shadow) }
+    .ta-item { padding:8px 10px; font-size:13px; color:var(--text); cursor:pointer }
+    .ta-item:hover, .ta-item.active { background:rgba(147,197,253,.25) }
 
     /* Marker numbers */
     .num-marker { display:flex; align-items:center; justify-content:center; font-weight:700; color:#fff; background:#0ea5e9; border:2px solid #fff; border-radius:50%; width:28px; height:28px; box-shadow:0 1px 6px rgba(0,0,0,.35) }
     .num-marker.origin { background:#22c55e }
     .num-marker.dest { background:#ef4444 }
-    .leaflet-tooltip.marker-label { background:#111827; border:1px solid #2b3747; color:#e5e7eb; padding:2px 6px; border-radius:6px; font-size:11px }
+    .leaflet-tooltip.marker-label { background:var(--panel); border:1px solid var(--border); color:var(--text); padding:2px 6px; border-radius:6px; font-size:11px }
   </style>
 </head>
 <body>
-  <header><h1>🧭 Route Buffer Visualizer</h1></header>
+  <header>
+    <h1>Zone Widget</h1>
+    <div class="theme-toggle">
+      <span class="small" id="mapThemeLabel">Map: Dark</span>
+      <button id="mapThemeBtn" class="toggle" title="Toggle map theme">🌙</button>
+    </div>
+  </header>
+
   <main>
     <div class="panel">
-      <!-- Mode toggle: URL / Manual / Regions -->
+      <!-- Input Mode -->
+      <div class="section-title">Input Mode</div>
+      <div class="sub-title">Choose workflow</div>
       <div class="section">
-        <label>Input Mode</label>
-        <div class="seg" role="tablist" aria-label="Input Mode">
+        <div class="mode-toggle" role="tablist" aria-label="Input Mode">
           <button id="modeUrl" class="active" role="tab" aria-selected="true">Google Maps URL</button>
           <button id="modeManual" role="tab" aria-selected="false">Create Route Manually</button>
           <button id="modeRegions" role="tab" aria-selected="false">Regions</button>
         </div>
       </div>
 
+      <!-- Workflow content -->
+      <div class="subtle">Workflow content</div>
       <!-- URL section -->
       <div id="urlSection" class="section">
         <label for="gmapsUrl">Google Maps Directions URL</label>
@@ -86,7 +111,7 @@
       <!-- Manual waypoint section -->
       <div id="manualSection" class="section" style="display:none;">
         <div class="wp-header">
-          <div><span class="badge">Waypoints</span> (max 10)</div>
+          <div><span class="small" style="font-weight:700">Waypoints</span> (max 10)</div>
           <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
             <button id="addStopBtn" class="ghost">+ Add Stop</button>
             <button id="clearStopsBtn" class="danger">Clear</button>
@@ -99,35 +124,44 @@
 
       <!-- Regions section -->
       <div id="regionsSection" class="section" style="display:none;">
-        <div class="wp-header">
-          <div><span class="badge">Regions</span> (search or draw)</div>
-          <div style="display:flex; gap:8px; flex-wrap:wrap;">
-            <button id="drawRegionBtn" class="ghost">✏️ Draw Region</button>
+        <!-- Toggle between Find vs Draw -->
+        <div class="regions-toggle" role="tablist" aria-label="Region Input Mode" style="margin-bottom:10px;">
+          <button id="btnRegionFind" class="active" role="tab" aria-selected="true">Find Region</button>
+          <button id="btnRegionDraw" role="tab" aria-selected="false">Draw Region</button>
+        </div>
+        <!-- Find Region content (full width input with typeahead below) -->
+        <div id="regionFindWrap">
+          <label for="regionName">Find Region by Name or ZIP (US)</label>
+          <div class="ta-wrap">
+            <input id="regionName" type="text" placeholder="e.g., Berkeley, CA or 94618" />
+            <div id="regionTa" class="ta" style="display:none;"></div>
+          </div>
+          <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:8px;">
+            <button id="findRegionBtn" class="secondary">Find Region</button>
             <button id="clearRegionBtn" class="danger">Clear Region</button>
           </div>
         </div>
-        <div class="row">
-          <div>
-            <label for="regionName">Find Region by Name or ZIP (US)</label>
-            <input id="regionName" type="text" placeholder="e.g., Berkeley, CA or 94618" />
-          </div>
-          <div style="display:flex; align-items:end; justify-content:flex-end;">
-            <button id="findRegionBtn" class="secondary">Find Region</button>
+        <!-- Draw Region content (instructions only; drawing starts when toggled) -->
+        <div id="regionDrawWrap" style="display:none;">
+          <div class="legend">Drawing mode is active. Click on the map to add vertices; click the first point to finish. Use <b>Clear Region</b> to remove.</div>
+          <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:8px;">
+            <button id="clearRegionBtn2" class="danger">Clear Region</button>
           </div>
         </div>
-        <div class="legend">Search uses OpenStreetMap (Nominatim) with polygon boundaries, or draw a polygon on the map.</div>
       </div>
 
-      <!-- Common controls -->
+      <!-- Buffer Radius -->
+      <div class="section-title">Buffer Radius</div>
       <div class="section row">
         <div>
-          <label for="bufferRadius">Buffer Radius</label>
+          <label for="bufferRadius">Select buffer radius</label>
           <select id="bufferRadius"><option value="10">10 m</option><option value="25" selected>25 m</option><option value="50">50 m</option><option value="100">100 m</option></select>
         </div>
         <div style="display:flex; gap:8px; align-items:end; justify-content:flex-end;"><button id="runBtn" class="blue">Run (Route/Region) & Buffer</button></div>
       </div>
 
-      <!-- Advanced buffering options (expandable; closed by default) -->
+      <!-- Advanced buffering -->
+      <div class="sub-title">Advanced buffering</div>
       <div class="section">
         <details id="advPanel" class="adv">
           <summary>Advanced buffering</summary>
@@ -151,72 +185,50 @@
 
       <div id="loading">⏳ Working... Please wait.</div>
       <div id="errorBox" class="error"></div>
-      <div class="bar" style="height:1px; background:var(--border); margin:10px 0"></div>
+      <div style="height:1px; background:var(--border); margin:10px 0"></div>
 
       <!-- Output -->
+      <div class="section-title">Output</div>
+      <div class="sub-title">Geometry</div>
       <div class="section">
-        <div class="badge">Output</div>
-        <label>Geometry</label>
-        <div id="geomChoices" class="export-row" style="margin:6px 0 10px 0;"></div>
-        <label>Format</label>
-        <div class="export-row">
+        <div id="geomChoices" class="export-row" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;"></div>
+      </div>
+      <div class="sub-title">Format</div>
+      <div class="section">
+        <div class="export-row" style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
           <label><input type="radio" name="exportFmt" value="wkt" checked> WKT</label>
           <label><input type="radio" name="exportFmt" value="geojson"> GeoJSON</label>
           <label><input type="radio" name="exportFmt" value="kml"> KML</label>
           <label><input type="radio" name="exportFmt" value="shp"> Shapefile (.zip)</label>
         </div>
-        <label for="outputText">Preview</label>
+      </div>
+      <div class="sub-title">Preview</div>
+      <div class="section">
+        <label for="outputText" class="small">Preview (read-only)</label>
         <textarea id="outputText" readonly placeholder="Output will appear here after routing/buffering."></textarea>
-        <div style="margin-top:8px; display:flex; gap:8px;"><button id="downloadBtn" class="secondary">Download</button></div>
+      </div>
+      <div class="sub-title">Download</div>
+      <div class="section" style="display:flex; gap:8px;">
+        <button id="downloadBtn" class="secondary">Download</button>
       </div>
 
-      <div class="legend">• Manual mode: clicks on the map add stops; drag pins to adjust; route/buffer update automatically.
-      • Regions: search for a named region or enter a US ZIP to fetch the ZIP polygon; you can also draw a polygon.
-      • Output: Switch geometry & format to preview; Download saves the active selection.</div>
+      <div class="legend">• Switching between workflows (URL / Manual / Regions) clears the map layers. • Manual mode: click to add stops, drag pins to adjust. • Regions: search by name/ZIP or draw. • Output: choose a geometry & format to preview and download.</div>
     </div>
 
     <div id="map"></div>
   </main>
 
-  <!-- Scripts (keep shp-write out for dynamic loader to handle) -->
+  <!-- Scripts -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
   <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
   <script src="https://unpkg.com/wellknown@0.5.0/wellknown.js"></script>
-
   <script>
-    // -------- Dynamic loader for shp-write (Shapefile support) --------
-    function ensureShpWriteLoaded(){
-      return new Promise(function(resolve, reject){
-        if (typeof window.shpwrite !== 'undefined') return resolve(window.shpwrite);
-        var tried = [];
-        function load(src){
-          return new Promise(function(res, rej){
-            var s = document.createElement('script');
-            s.src = src; s.async = true; s.onload = function(){ res(true); };
-            s.onerror = function(){ rej(new Error('Failed to load '+src)); };
-            document.head.appendChild(s);
-          });
-        }
-        // Two CDN fallbacks
-        var cdns = [
-          'https://cdn.jsdelivr.net/npm/shp-write@0.3.3/shpwrite.js',
-          'https://unpkg.com/shp-write@0.3.3/shpwrite.js'
-        ];
-        (async function(){
-          for (var i=0;i<cdns.length;i++){
-            var url = cdns[i]; tried.push(url);
-            try { await load(url); if (typeof window.shpwrite !== 'undefined') return resolve(window.shpwrite); } catch(e) { /* try next */ }
-          }
-          reject(new Error('Could not load shp-write from CDNs: '+tried.join(', ')));
-        })();
-      });
-    }
-  </script>
+    // -------- Map base layers (UI stays dark; toggle affects map tiles only) --------
+    var baseLight = null, baseDark = null;
 
-  <script>
     // -------- State --------
-    var state = { map:null, routeLayer:null, bufferLayer:null, regionLayer:null, markers:[], lastPoints:null, lastRoute:null, lastBuffer:null, regionFeature:null, fallbackQueue:[], maxStops:10, mode:'url' };
+    var state = { map:null, baseLayer:null, mapTheme:'dark', routeLayer:null, bufferLayer:null, regionLayer:null, markers:[], lastPoints:null, lastRoute:null, lastBuffer:null, regionFeature:null, fallbackQueue:[], maxStops:10, mode:'url', regionMode:'find' };
 
     // -------- UI helpers --------
     function setLoading(x){ document.getElementById('loading').style.display = x ? 'block' : 'none'; var p=document.getElementById('parseBtn'); if(p) p.disabled=x||state.mode!=='url'; document.getElementById('runBtn').disabled=x; }
@@ -226,14 +238,36 @@
     // -------- Map init & resets --------
     function initMap(){
       state.map=L.map('map',{zoomControl:true}).setView([37.7749,-122.4194],12);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19, attribution:'&copy; OpenStreetMap contributors'}).addTo(state.map);
+      // CARTO light & dark basemaps (no key)
+      baseLight = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+        subdomains: 'abcd', maxZoom: 20
+      });
+      baseDark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+        subdomains: 'abcd', maxZoom: 20
+      });
+      // Default map theme is dark
+      try { var saved = localStorage.getItem('zw-map-theme'); if(saved==='light') state.mapTheme='light'; } catch(e){}
+      applyMapTheme(state.mapTheme);
+
       // Click-to-add (manual only)
       state.map.on('click', function(evt){ if(state.mode!=='manual') return; var lat=evt.latlng.lat, lng=evt.latlng.lng; addWaypointRow(lat.toFixed(6)+','+lng.toFixed(6)); if(!Array.isArray(state.lastPoints)) state.lastPoints=[]; state.lastPoints.push({lat:lat,lng:lng}); placeMarkers(state.lastPoints); if(state.lastPoints.length>=2){ rerouteFromLastPoints(); } });
       // Draw (regions)
       var drawCtl=new L.Control.Draw({ position:'topright', draw:{ polygon:true, polyline:false, rectangle:false, circle:false, marker:false, circlemarker:false }, edit:false });
       state.map.addControl(drawCtl);
-      state.map.on(L.Draw.Event.CREATED, function(e){ if(state.mode!=='regions') return; var layer=e.layer; var feat={ type:'Feature', properties:{}, geometry: layer.toGeoJSON().geometry }; setRegionFeature(feat); });
+      state.map.on(L.Draw.Event.CREATED, function(e){ if(state.mode!=='regions' || state.regionMode!=='draw') return; var layer=e.layer; var feat={ type:'Feature', properties:{}, geometry: layer.toGeoJSON().geometry }; setRegionFeature(feat); });
     }
+
+    function applyMapTheme(theme){ if(state.baseLayer){ state.map.removeLayer(state.baseLayer); state.baseLayer=null; }
+      if(theme==='light'){ state.baseLayer = baseLight; } else { state.baseLayer = baseDark; }
+      if(state.baseLayer) state.baseLayer.addTo(state.map);
+      var label = document.getElementById('mapThemeLabel'); var btn = document.getElementById('mapThemeBtn');
+      if(label) label.textContent = 'Map: ' + (theme==='light' ? 'Light' : 'Dark');
+      if(btn) btn.textContent = (theme==='light' ? '☀️' : '🌙');
+      try { localStorage.setItem('zw-map-theme', theme); } catch(e){}
+    }
+
     function clearMapGeoms(){ try{ if(state.routeLayer){ state.map.removeLayer(state.routeLayer); state.routeLayer=null; } if(state.bufferLayer){ state.map.removeLayer(state.bufferLayer); state.bufferLayer=null; } if(state.regionLayer){ state.map.removeLayer(state.regionLayer); state.regionLayer=null; } clearMarkers(); state.lastPoints=null; state.lastRoute=null; state.lastBuffer=null; state.regionFeature=null; document.getElementById('outputText').value=''; var box=document.getElementById('geomChoices'); if(box) box.innerHTML=''; }catch(e){} }
 
     // -------- URL helpers --------
@@ -247,7 +281,7 @@
     function renderWaypointList(values){ var list=document.getElementById('wpList'); if(!list) return; list.innerHTML=''; (values||[]).slice(0,state.maxStops).forEach(function(v){ addWaypointRow(v); }); updateIndices(); }
     function addWaypointRow(value){ value=(typeof value==='undefined')?'':value; var list=document.getElementById('wpList'); if(!list||list.children.length>=state.maxStops) return; var item=document.createElement('div'); item.className='wp-item'; item.innerHTML='\
       <div class="index">1</div>\
-      <input type="text" class="wp-input" placeholder="Address, business name, or lat,lng" />\
+      <div class="ta-wrap"><input type="text" class="wp-input" placeholder="Address, business name, or lat,lng" /></div>\
       <button class="ghost up" title="Move up">▲</button>\
       <button class="ghost down" title="Move down">▼</button>\
       <button class="danger del" title="Remove">✕</button>';
@@ -264,7 +298,7 @@
 
     // --- Typeahead core (Nominatim) ---
     function attachTypeahead(input, onPick){ var dd=null, items=[], activeIdx=-1, aborter=null; function close(){ if(dd){ dd.remove(); dd=null; } activeIdx=-1; if(aborter){ aborter.abort(); aborter=null; } }
-      function render(list){ if(!dd){ dd=document.createElement('div'); dd.className='ta'; input.parentElement.appendChild(dd); } dd.innerHTML=''; list.forEach(function(r,ix){ var div=document.createElement('div'); div.className='ta-item'+(ix===activeIdx?' active':''); div.textContent=r.display_name || r.name || r; div.addEventListener('mousedown', function(e){ e.preventDefault(); onPick(r.display_name || r.name || r); close(); }); dd.appendChild(div); }); if(list.length===0){ close(); } }
+      function render(list){ var wrap=input.closest('.ta-wrap'); if(!wrap) return; if(!dd){ dd=document.createElement('div'); dd.className='ta'; wrap.appendChild(dd); } dd.innerHTML=''; list.forEach(function(r,ix){ var div=document.createElement('div'); div.className='ta-item'+(ix===activeIdx?' active':''); div.textContent=r.display_name || r.name || r; div.addEventListener('mousedown', function(e){ e.preventDefault(); onPick(r.display_name || r.name || r); close(); }); dd.appendChild(div); }); if(list.length===0){ close(); } }
       function debounce(fn, ms){ var t; return function(){ var a=arguments; clearTimeout(t); t=setTimeout(function(){ fn.apply(null,a); }, ms); } }
       async function query(q){ if(!q || q.length<3) { close(); return; } try{ if(aborter) aborter.abort(); aborter=new AbortController(); var url='https://nominatim.openstreetmap.org/search?format=json&q='+encodeURIComponent(q)+'&limit=5&addressdetails=0'; var resp=await fetch(url,{ signal:aborter.signal, headers:{'Accept':'application/json'} }); if(!resp.ok) return; var data=await resp.json(); items=data||[]; activeIdx=-1; render(items); } catch(e){ /* ignore */ } }
       var onInput=debounce(function(){ query(input.value.trim()); }, 200);
@@ -274,7 +308,7 @@
       input.addEventListener('blur', function(){ setTimeout(close, 150); });
     }
 
-    // Attach typeahead to Regions input too
+    // Attach typeahead to Regions input too with dropdown below input
     function attachRegionTypeahead(){ var el=document.getElementById('regionName'); if(!el) return; attachTypeahead(el, function(sel){ el.value=sel; }); el.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); document.getElementById('findRegionBtn').click(); } }); }
 
     // -------- Markers for stops --------
@@ -284,10 +318,11 @@
     async function onMarkerDragEnd(idx,e){ try{ var ll=e.target.getLatLng(); if(!Array.isArray(state.lastPoints)||!state.lastPoints[idx]) return; state.lastPoints[idx]={lat:ll.lat,lng:ll.lng}; var inputs=document.querySelectorAll('.wp-input'); if(inputs[idx]) inputs[idx].value=ll.lat.toFixed(6)+','+ll.lng.toFixed(6); await rerouteFromLastPoints(); } catch(err){ console.error(err); showError('DRAG_ERROR', err.message||String(err)); } }
 
     // -------- Advanced settings --------
-    function getAdvancedSettings(){ var steps=parseInt(document.getElementById('advSteps').value,10); if(!isFinite(steps)||steps<1) steps=6; var tolM=parseFloat(document.getElementById('advSimplify').value); if(!isFinite(tolM)||tolM<0) tolM=7; var prec=parseInt(document.getElementById('advPrecision').value,10); if(!isFinite(prec)||prec<0) prec=5; return { steps:steps, simplifyMeters:tolM, precision:prec }; }
+    function getAdvancedSettings(){ var steps=parseInt(document.getElementById('advSteps').value,10); if(!isFinite(steps)||steps<1) steps=6; var tolM=parseFloat(document.getElementById('advSimplify').value); if(!isFinite(tolM)||tolM<0) tolM=7; var prec=parseInt(document.getElementById('advPrecision').value,10); if(!isFinite(prec)||prec<0) prec=5; return { steps:steps, simplifyMeters:tolM, precision:prec };
+    }
 
     // -------- Geocoding / Routing / Buffering --------
-    async function geocodeIfNeeded(input){ if(Array.isArray(input)) return {lat:input[0], lng:input[1]}; var ll=isLatLng(input); if(ll) return {lat:ll[0], lng:ll[1]}; var q=String(input||'').trim(); if(!q) throw new Error('Empty stop value'); var url='https://nominatim.openstreetmap.org/search?format=json&q='+encodeURIComponent(q)+'&limit=1&addressdetails=0'; var resp=await fetch(url,{headers:{'Accept':'application/json'}}); if(!resp.ok) throw new Error('Geocoding failed ('+resp.status+')'); var data=await resp.json(); if(!Array.isArray(data)||!data.length) throw new Error('No geocoding results'); var lat=data[0].lat, lon=data[0].lon; return {lat:parseFloat(lat), lng:parseFloat(lon)}; }
+    async function geocodeIfNeeded(input){ if(Array.isArray(input)) return {lat:input[0], lng:input[1]}; var ll=isLatLng(input); if(ll) return {lat:ll[0], lng:ll[1]}; var q=String(input||'').trim(); if(!q) throw new Error('Empty value'); var url='https://nominatim.openstreetmap.org/search?format=json&q='+encodeURIComponent(q)+'&limit=1&addressdetails=0'; var resp=await fetch(url,{headers:{'Accept':'application/json'}}); if(!resp.ok) throw new Error('Geocoding failed ('+resp.status+')'); var data=await resp.json(); if(!Array.isArray(data)||!data.length) throw new Error('No geocoding results'); var lat=data[0].lat, lon=data[0].lon; return {lat:parseFloat(lat), lng:parseFloat(lon)}; }
     async function fetchRouteForPoints(pointsLL){ if(!Array.isArray(pointsLL)||pointsLL.length<2) throw new Error('Need at least 2 stops'); if(pointsLL.length>state.maxStops) throw new Error('Maximum '+state.maxStops+' stops supported'); var coords=pointsLL.map(function(p){ return p.lng+','+p.lat; }).join(';'); var url='https://router.project-osrm.org/route/v1/driving/'+coords+'?overview=full&geometries=geojson&steps=false'; var resp=await fetch(url); if(!resp.ok) throw new Error('Routing failed ('+resp.status+')'); var data=await resp.json(); if(!data||data.code!=='Ok'||!data.routes||!data.routes.length) throw new Error('No route found'); return data.routes[0].geometry; }
 
     function postProcessBuffer(feature, settings){ var out=feature||null; if(!out) return out; var tolM=settings&&settings.simplifyMeters; if(isFinite(tolM)&&tolM>0){ var tolDeg=tolM/111320; try{ out=turf.simplify(out,{tolerance:tolDeg, highQuality:true}); }catch(e){} } var prec=settings&&settings.precision; if(isFinite(prec)&&prec>=0){ out=roundFeatureCoords(out,prec); } return out; }
@@ -311,25 +346,65 @@
     function pickExportGeometry(){ var el=document.querySelector('input[name="exportGeom"]:checked'); var choice=el?el.value:'buffer'; if(choice==='route'){ if(!state.lastRoute) throw new Error('No route available'); return { type:'Feature', properties:{}, geometry: state.lastRoute }; } else if(choice==='region'){ if(!state.regionFeature) throw new Error('No region polygon available'); return state.regionFeature; } else { if(!state.lastBuffer) throw new Error('No buffer available'); return state.lastBuffer; } }
 
     function toKML(feature){ var geom=feature.geometry||feature; function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); } function coordsStr(c){ return c.map(function(x){ return x[0]+','+x[1]+',0'; }).join(' '); } function closeRing(r){ return (r.length && (r[0][0]!==r[r.length-1][0] || r[0][1]!==r[r.length-1][1])) ? r.concat([r[0]]) : r; } function poly(coords){ var outer=coords[0], inner=coords.slice(1); var k='<outerBoundaryIs><LinearRing><coordinates>'+coordsStr(closeRing(outer))+'</coordinates></LinearRing></outerBoundaryIs>'; inner.forEach(function(h){ k+='<innerBoundaryIs><LinearRing><coordinates>'+coordsStr(closeRing(h))+'</coordinates></LinearRing></innerBoundaryIs>'; }); return '<Polygon>'+k+'</Polygon>'; } var g=''; if(geom.type==='LineString'){ g='<LineString><coordinates>'+coordsStr(geom.coordinates)+'</coordinates></LineString>'; } else if(geom.type==='Polygon'){ g=poly(geom.coordinates); } else if(geom.type==='MultiPolygon'){ g=geom.coordinates.map(function(p){ return '<Placemark>'+poly(p)+'</Placemark>'; }).join(''); } else { throw new Error('KML format supports LineString, Polygon, MultiPolygon'); } var name=(feature.properties&&feature.properties.name)||'Export'; var pm=(geom.type==='MultiPolygon')?g:('<Placemark><name>'+esc(name)+'</name>'+g+'</Placemark>'); return '<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document>'+pm+'</Document></kml>'; }
-
     function updateOutputText(){ var fmtEl=document.querySelector('input[name="exportFmt"]:checked'); var fmt=fmtEl?fmtEl.value:'wkt'; var txt=document.getElementById('outputText'); try{ var feat=pickExportGeometry(); if(fmt==='wkt'){ txt.value=wellknown.stringify(feat.geometry)||''; } else if(fmt==='geojson'){ txt.value=JSON.stringify(feat,null,2); } else if(fmt==='kml'){ txt.value=toKML(feat); } else if(fmt==='shp'){ txt.value='Shapefile (.zip) will be downloaded. Preview is not available for binary formats.'; } } catch(e){ txt.value='Output unavailable: '+(e.message||String(e)); } }
 
-    function downloadCurrent(){ var fmtEl=document.querySelector('input[name="exportFmt"]:checked'); var fmt=fmtEl?fmtEl.value:'wkt'; if(fmt==='shp'){ return downloadShapefile(); } var mime='text/plain', ext='txt'; if(fmt==='wkt'){ mime='text/plain'; ext='wkt'; } if(fmt==='geojson'){ mime='application/geo+json'; ext='geojson'; } if(fmt==='kml'){ mime='application/vnd.google-earth.kml+xml'; ext='kml'; } var text=document.getElementById('outputText').value||''; if(!text){ showError('EXPORT_ERROR','Nothing to download. Run first.'); return; } var geomEl=document.querySelector('input[name="exportGeom"]:checked'); var geom=(geomEl?geomEl.value:'buffer'); var filename='export_'+geom+'.'+ext; var blob=new Blob([text],{type:mime}); var url=URL.createObjectURL(blob); var a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); }
+    async function downloadCurrent(){ var fmtEl=document.querySelector('input[name="exportFmt"]:checked'); var fmt=fmtEl?fmtEl.value:'wkt'; if(fmt==='shp'){ return downloadShapefile(); } var mime='text/plain', ext='txt'; if(fmt==='wkt'){ mime='text/plain'; ext='wkt'; } if(fmt==='geojson'){ mime='application/geo+json'; ext='geojson'; } if(fmt==='kml'){ mime='application/vnd.google-earth.kml+xml'; ext='kml'; } var text=document.getElementById('outputText').value||''; if(!text){ showError('EXPORT_ERROR','Nothing to download. Run first.'); return; } var geomEl=document.querySelector('input[name="exportGeom"]:checked'); var geom=(geomEl?geomEl.value:'buffer'); var filename='export_'+geom+'.'+ext; var blob=new Blob([text],{type:mime}); var url=URL.createObjectURL(blob); var a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); }
+
+    // Shapefile loader (dynamic, two-CDN fallback)
+    async function ensureShpWriteLoaded(){ if(typeof window.shpwrite!=='undefined') return window.shpwrite; var tried=[]; async function load(src){ return new Promise(function(res,rej){ var s=document.createElement('script'); s.src=src; s.async=true; s.onload=function(){ res(true); }; s.onerror=function(){ rej(new Error('Failed '+src)); }; document.head.appendChild(s); }); }
+      var cdns=[ 'https://cdn.jsdelivr.net/npm/shp-write@0.3.3/shpwrite.js', 'https://unpkg.com/shp-write@0.3.3/shpwrite.js' ];
+      for(var i=0;i<cdns.length;i++){ var u=cdns[i]; tried.push(u); try{ await load(u); if(typeof window.shpwrite!=='undefined') return window.shpwrite; }catch(e){} }
+      throw new Error('Could not load shp-write from: '+tried.join(', ')); }
 
     async function downloadShapefile(){ try{ await ensureShpWriteLoaded(); if(typeof shpwrite==='undefined'){ showError('EXPORT_ERROR','Shapefile support not loaded.'); return; } var feat=pickExportGeometry(); var fc={ type:'FeatureCollection', features:[feat] }; var gtype=feat && feat.geometry ? feat.geometry.type : 'geometry'; var layerName='export_'+gtype.toLowerCase(); var zip=shpwrite.zip(fc, { folder:'shapefile', types:{} }); var blob= zip instanceof Blob ? zip : new Blob([zip],{type:'application/zip'}); var a=document.createElement('a'); var url=URL.createObjectURL(blob); a.href=url; a.download=layerName+'.zip'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); } catch(e){ console.error(e); showError('EXPORT_ERROR', e.message||String(e)); } }
 
     // -------- Actions --------
-    async function handleParse(){ clearError(); setLoading(true); state.fallbackQueue=[]; try{ var url=(document.getElementById('gmapsUrl').value||'').trim(); if(!url) throw new Error('Please paste a Google Maps directions URL.'); if(/maps\.app\.goo\.gl|goo\.gl\/maps/.test(url)) url=await resolveShortUrl(url); state.fallbackQueue=extractLatLngPairsFromUrl(url); var parsed=parseGMapsUrl(url); if(!parsed||!parsed.points||parsed.points.length<2){ showError('INVALID_URL','Could not parse at least 2 stops from the URL.'); return; } renderWaypointList(parsed.points); setMode('manual'); // Geocode parsed points to show pins (no routing yet)
-      var pointsLL=[]; for(var i=0;i<parsed.points.length;i++){ try{ pointsLL.push(await geocodeIfNeeded(parsed.points[i])); }catch(e){ /* skip */ } } if(pointsLL.length){ state.lastPoints=pointsLL; placeMarkers(pointsLL); }
+    async function handleParse(){ clearError(); setLoading(true); state.fallbackQueue=[]; try{ var url=(document.getElementById('gmapsUrl').value||'').trim(); if(!url) throw new Error('Please paste a Google Maps directions URL.'); if(/maps\.app\.goo\.gl|goo\.gl\/maps/.test(url)) url=await resolveShortUrl(url); state.fallbackQueue=extractLatLngPairsFromUrl(url); var parsed=parseGMapsUrl(url); if(!parsed||!parsed.points||parsed.points.length<2){ showError('INVALID_URL','Could not parse at least 2 stops from the URL.'); return; } renderWaypointList(parsed.points); setMode('manual'); // drop pins before routing
+      var pointsLL=[]; for(var i=0;i<parsed.points.length;i++){ try{ pointsLL.push(await geocodeIfNeeded(parsed.points[i])); }catch(e){ } } if(pointsLL.length){ state.lastPoints=pointsLL; placeMarkers(pointsLL); }
     } catch(e){ console.error(e); showError('PARSE_ERROR', e.message||String(e)); } finally{ setLoading(false); } }
 
     async function handleRun(){ clearError(); setLoading(true); document.getElementById('outputText').value=''; try{ var radius=parseInt(document.getElementById('bufferRadius').value,10)||25; var adv=getAdvancedSettings(); if(state.mode==='regions'){ if(!state.regionFeature) throw new Error('No region polygon set. Search a region or draw one.'); var regionBuf=bufferPolygon(state.regionFeature, radius, adv); render(null, regionBuf, regionBuf); } else { var values=[]; if(state.mode==='url'){ values=getWaypointValues(); if(values.length<2){ var url=(document.getElementById('gmapsUrl').value||'').trim(); if(!url) throw new Error('Paste a URL or switch to Manual mode to enter stops.'); if(/maps\.app\.goo\.gl|goo\.gl\/maps/.test(url)) url=await resolveShortUrl(url); state.fallbackQueue=extractLatLngPairsFromUrl(url); var parsed=parseGMapsUrl(url); if(!parsed||!parsed.points||parsed.points.length<2) throw new Error('Could not parse at least 2 stops from the URL.'); renderWaypointList(parsed.points); values=parsed.points; } } else { values=getWaypointValues(); } if(values.length<2) throw new Error('Add at least origin and destination'); if(values.length>state.maxStops) throw new Error('Maximum '+state.maxStops+' stops supported'); var fbq=state.fallbackQueue.slice(); var pointsLL=[]; for(var i=0;i<values.length;i++){ var seg=values[i]; try{ pointsLL.push(await geocodeIfNeeded(seg)); } catch(e){ if(fbq.length) pointsLL.push(fbq.shift()); else throw e; } } state.lastPoints=pointsLL; placeMarkers(pointsLL); var lineGeom=await fetchRouteForPoints(pointsLL); var bufferFeature=bufferLine(lineGeom, radius, adv); render(lineGeom, bufferFeature, null); } } catch(e){ console.error(e); showError('PROCESSING_ERROR', e.message||String(e)); } finally{ setLoading(false); } }
 
-    function setMode(mode){ if(mode===state.mode) return; state.mode=mode; var btnUrl=document.getElementById('modeUrl'); var btnManual=document.getElementById('modeManual'); var btnRegions=document.getElementById('modeRegions'); var urlSection=document.getElementById('urlSection'); var manualSection=document.getElementById('manualSection'); var regionsSection=document.getElementById('regionsSection'); btnUrl.classList.remove('active'); btnManual.classList.remove('active'); btnRegions.classList.remove('active'); btnUrl.setAttribute('aria-selected','false'); btnManual.setAttribute('aria-selected','false'); btnRegions.setAttribute('aria-selected','false'); urlSection.style.display='none'; manualSection.style.display='none'; regionsSection.style.display='none'; if(mode==='url'){ btnUrl.classList.add('active'); btnUrl.setAttribute('aria-selected','true'); urlSection.style.display='block'; } else if(mode==='manual'){ btnManual.classList.add('active'); btnManual.setAttribute('aria-selected','true'); manualSection.style.display='block'; } else { btnRegions.classList.add('active'); btnRegions.setAttribute('aria-selected','true'); regionsSection.style.display='block'; } // Clear map + output when switching workflows
+    function setMode(mode){ if(mode===state.mode) return; state.mode=mode; var btnUrl=document.getElementById('modeUrl'); var btnManual=document.getElementById('modeManual'); var btnRegions=document.getElementById('modeRegions'); var urlSection=document.getElementById('urlSection'); var manualSection=document.getElementById('manualSection'); var regionsSection=document.getElementById('regionsSection'); btnUrl.classList.remove('active'); btnManual.classList.remove('active'); btnRegions.classList.remove('active'); btnUrl.setAttribute('aria-selected','false'); btnManual.setAttribute('aria-selected','false'); btnRegions.setAttribute('aria-selected','false'); urlSection.style.display='none'; manualSection.style.display='none'; regionsSection.style.display='none'; if(mode==='url'){ btnUrl.classList.add('active'); btnUrl.setAttribute('aria-selected','true'); urlSection.style.display='block'; } else if(mode==='manual'){ btnManual.classList.add('active'); btnManual.setAttribute('aria-selected','true'); manualSection.style.display='block'; } else { btnRegions.classList.add('active'); btnRegions.setAttribute('aria-selected','true'); regionsSection.style.display='block'; }
       clearMapGeoms(); }
 
+    // Regions find/draw toggle
+    function setRegionMode(mode){ state.regionMode=mode; var bF=document.getElementById('btnRegionFind'); var bD=document.getElementById('btnRegionDraw'); bF.classList.remove('active'); bD.classList.remove('active'); bF.setAttribute('aria-selected','false'); bD.setAttribute('aria-selected','false'); document.getElementById('regionFindWrap').style.display='none'; document.getElementById('regionDrawWrap').style.display='none'; if(mode==='find'){ bF.classList.add('active'); bF.setAttribute('aria-selected','true'); document.getElementById('regionFindWrap').style.display='block'; } else { bD.classList.add('active'); bD.setAttribute('aria-selected','true'); document.getElementById('regionDrawWrap').style.display='block'; try{ new L.Draw.Polygon(state.map).enable(); }catch(e){} }
+    }
+
     // -------- Wire up --------
-    window.addEventListener('DOMContentLoaded', function(){ initMap(); attachRegionTypeahead(); document.getElementById('modeUrl').addEventListener('click', function(){ setMode('url'); }); document.getElementById('modeManual').addEventListener('click', function(){ setMode('manual'); }); document.getElementById('modeRegions').addEventListener('click', function(){ setMode('regions'); }); document.getElementById('parseBtn').addEventListener('click', handleParse); document.getElementById('addStopBtn').addEventListener('click', function(){ addWaypointRow(''); }); document.getElementById('clearStopsBtn').addEventListener('click', function(){ var l=document.getElementById('wpList'); l.innerHTML=''; updateIndices(); clearMapGeoms(); }); document.getElementById('findRegionBtn').addEventListener('click', async function(){ clearError(); setLoading(true); try{ var name=(document.getElementById('regionName').value||'').trim(); if(!name) throw new Error('Enter a region name or ZIP'); var feat=await findRegionByName(name); setRegionFeature(feat); } catch(e){ console.error(e); showError('REGION_ERROR', e.message||String(e)); } finally{ setLoading(false); } }); document.getElementById('drawRegionBtn').addEventListener('click', function(){ if(state.mode!=='regions') setMode('regions'); try{ new L.Draw.Polygon(state.map).enable(); }catch(e){ console.error(e); showError('DRAW_ERROR','Could not start drawing'); } }); document.getElementById('clearRegionBtn').addEventListener('click', function(){ clearRegion(); clearMapGeoms(); }); document.getElementById('runBtn').addEventListener('click', handleRun); Array.prototype.forEach.call(document.querySelectorAll('input[name="exportFmt"]'), function(r){ r.addEventListener('change', updateOutputText); }); document.getElementById('downloadBtn').addEventListener('click', downloadCurrent); updateGeomChoices(); });
+    window.addEventListener('DOMContentLoaded', function(){
+      initMap(); attachRegionTypeahead();
+      // Map theme toggle
+      document.getElementById('mapThemeBtn').addEventListener('click', function(){ var t=(state.mapTheme==='dark')?'light':'dark'; state.mapTheme=t; applyMapTheme(t); });
+
+      // Mode toggle
+      document.getElementById('modeUrl').addEventListener('click', function(){ setMode('url'); });
+      document.getElementById('modeManual').addEventListener('click', function(){ setMode('manual'); });
+      document.getElementById('modeRegions').addEventListener('click', function(){ setMode('regions'); });
+
+      // URL
+      document.getElementById('parseBtn').addEventListener('click', handleParse);
+
+      // Manual editor
+      document.getElementById('addStopBtn').addEventListener('click', function(){ addWaypointRow(''); });
+      document.getElementById('clearStopsBtn').addEventListener('click', function(){ var l=document.getElementById('wpList'); l.innerHTML=''; updateIndices(); clearMapGeoms(); });
+
+      // Regions
+      document.getElementById('btnRegionFind').addEventListener('click', function(){ setRegionMode('find'); });
+      document.getElementById('btnRegionDraw').addEventListener('click', function(){ setRegionMode('draw'); });
+      document.getElementById('findRegionBtn').addEventListener('click', async function(){ clearError(); setLoading(true); try{ var name=(document.getElementById('regionName').value||'').trim(); if(!name) throw new Error('Enter a region name or ZIP'); var feat=await findRegionByName(name); setRegionFeature(feat); } catch(e){ console.error(e); showError('REGION_ERROR', e.message||String(e)); } finally{ setLoading(false); } });
+      document.getElementById('clearRegionBtn').addEventListener('click', function(){ clearRegion(); clearMapGeoms(); });
+      document.getElementById('clearRegionBtn2').addEventListener('click', function(){ clearRegion(); clearMapGeoms(); });
+
+      // Run + Output
+      document.getElementById('runBtn').addEventListener('click', handleRun);
+      Array.prototype.forEach.call(document.querySelectorAll('input[name="exportFmt"]'), function(r){ r.addEventListener('change', updateOutputText); });
+      document.getElementById('downloadBtn').addEventListener('click', downloadCurrent);
+
+      // Initialize
+      updateGeomChoices();
+    });
   </script>
 </body>
 </html>
