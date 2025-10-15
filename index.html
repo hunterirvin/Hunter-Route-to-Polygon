@@ -4,16 +4,16 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Route Buffer Visualizer</title>
+  <!-- Leaflet core -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <!-- Leaflet.draw for polygon drawing in Regions mode -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
   <style>
-    :root { --bg:#0f172a; --panel:#111827; --text:#e5e7eb; --muted:#9ca3af; --accent:#22c55e; --accent-2:#3b82f6; --error:#ef4444; --error-700:#b91c1c; --border:#1f2937; --chip:#0b1220; }
+    :root { --bg:#0f172a; --panel:#111827; --text:#e5e7eb; --muted:#9ca3af; --accent:#22c55e; --accent-2:#3b82f6; --danger:#ef4444; --danger-border:#dc2626; --border:#1f2937; --chip:#0b1220; }
     * { box-sizing:border-box }
     body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"; background:var(--bg); color:var(--text) }
-    header { padding:12px 20px; border-bottom:1px solid var(--border); background:#0b1220; position:sticky; top:0; z-index:10; display:flex; gap:16px; align-items:center; justify-content:space-between }
-    header h1 { margin:0; font-size:18px; font-weight:700; letter-spacing:.25px }
-    .theme { display:flex; align-items:center; gap:10px; color:#cbd5e1; font-size:13px }
-    .theme label { display:inline-flex; align-items:center; gap:6px; cursor:pointer }
+    header { padding:16px 20px; border-bottom:1px solid var(--border); background:#0b1220; position:sticky; top:0; z-index:10 }
+    header h1 { margin:0; font-size:20px; font-weight:700; letter-spacing:.25px }
     main { display:grid; grid-template-columns:520px 1fr; gap:16px; height:calc(100vh - 58px) }
     @media (max-width:1100px){ main{ grid-template-columns:1fr; height:auto } #map{ height:60vh } }
     .panel { padding:16px; border-right:1px solid var(--border); overflow:auto; background:var(--panel) }
@@ -23,8 +23,8 @@
     button { padding:8px 12px; border-radius:8px; border:1px solid transparent; background:var(--accent); color:#052e16; font-weight:700; cursor:pointer }
     button.secondary { background:#1f2937; color:var(--text); border-color:#2b3747 }
     button.blue { background:var(--accent-2); color:#031633; border-color:#1d4ed8 }
-    button.ghost { background:transparent; border-color:#2b3747; color: var(--muted); }
-    button.danger { background: var(--error); color:#fff; border-color: var(--error-700); }
+    button.ghost { background:transparent; border:1px solid #2b3747; color:var(--muted) }
+    button.danger { background:var(--danger); color:#fff; border-color:var(--danger-border) }
     button:disabled { opacity:.6; cursor:not-allowed }
     #loading { display:none; font-size:12px; color:var(--muted); margin-top:6px }
     #map { height:calc(100vh - 58px) }
@@ -37,67 +37,64 @@
     .seg { display:inline-flex; background:#0b1220; border:1px solid var(--border); border-radius:10px; overflow:hidden }
     .seg button { border:none; background:transparent; color:var(--muted); padding:8px 12px; font-weight:600 }
     .seg button.active { background:#172033; color:#e5e7eb }
+    details.adv { border:1px solid var(--border); border-radius:10px; padding:10px 12px; background:#0b1220 }
+    details.adv > summary { cursor:pointer; font-weight:700; color:#cbd5e1; outline:none }
+
+    /* Waypoint one-line layout */
     .wp-header { display:flex; justify-content:space-between; align-items:center; margin:8px 0 }
     .wp-list { display:flex; flex-direction:column; gap:8px }
-    .wp-item { display:grid; grid-template-columns:28px 1fr 28px 28px; gap:6px; align-items:center; padding:6px; border:1px solid var(--border); border-radius:8px; background:var(--chip) }
+    .wp-item { display:grid; grid-template-columns:28px 1fr 28px 28px 28px; gap:6px; align-items:center; padding:6px; border:1px solid var(--border); border-radius:8px; background:var(--chip); position:relative }
     .wp-item .index { width:28px; height:28px; display:flex; align-items:center; justify-content:center; font-size:12px; color:#cbd5e1; background:#111827; border-radius:6px }
     .wp-item button { padding:4px 0; height:30px }
-    .bar { height:1px; background:var(--border); margin:10px 0 }
-    .export-row { display:flex; gap:8px; flex-wrap:wrap; align-items:center }
+
+    /* Typeahead dropdown */
+    .ta { position:absolute; left:60px; right:96px; top:40px; background:#0b1220; border:1px solid #334155; border-radius:8px; z-index:20; max-height:220px; overflow:auto; box-shadow:0 6px 18px rgba(0,0,0,.35) }
+    .ta-item { padding:8px 10px; font-size:13px; color:#e5e7eb; cursor:pointer }
+    .ta-item:hover, .ta-item.active { background:#172033 }
+
+    /* Marker numbers */
+    .num-marker { display:flex; align-items:center; justify-content:center; font-weight:700; color:#fff; background:#0ea5e9; border:2px solid #fff; border-radius:50%; width:28px; height:28px; box-shadow:0 1px 6px rgba(0,0,0,.35) }
+    .num-marker.origin { background:#22c55e }
+    .num-marker.dest { background:#ef4444 }
     .leaflet-tooltip.marker-label { background:#111827; border:1px solid #2b3747; color:#e5e7eb; padding:2px 6px; border-radius:6px; font-size:11px }
-    /* Typeahead */
-    .typeahead-wrap { position: relative; }
-    .typeahead { position:absolute; left:0; right:0; top:100%; z-index:20; background:#0b1220; border:1px solid var(--border); border-radius:10px; margin-top:4px; max-height:220px; overflow:auto; box-shadow:0 8px 24px rgba(0,0,0,.35); }
-    .typeahead .item { padding:8px 10px; display:flex; flex-direction:column; gap:2px; cursor:pointer; }
-    .typeahead .item:hover, .typeahead .item.active { background:#172033; }
-    .typeahead .title { color:#e5e7eb; font-weight:600; }
-    .typeahead .meta { color:#9ca3af; font-size:12px; }
   </style>
 </head>
 <body>
-  <header>
-    <h1>🧭 Route Buffer Visualizer</h1>
-    <div class="theme" role="radiogroup" aria-label="Map Theme">
-      <span>Map Theme:</span>
-      <label><input type="radio" name="mapTheme" value="dark" checked> Dark</label>
-      <label><input type="radio" name="mapTheme" value="light"> Light</label>
-    </div>
-  </header>
+  <header><h1>🧭 Route Buffer Visualizer</h1></header>
   <main>
     <div class="panel">
-      <!-- Mode toggle: Manual is default -->
+      <!-- Mode toggle: URL / Manual / Regions -->
       <div class="section">
         <label>Input Mode</label>
         <div class="seg" role="tablist" aria-label="Input Mode">
-          <button id="modeUrl" role="tab" aria-selected="false">Google Maps URL</button>
-          <button id="modeManual" class="active" role="tab" aria-selected="true">Create Route Manually</button>
+          <button id="modeUrl" class="active" role="tab" aria-selected="true">Google Maps URL</button>
+          <button id="modeManual" role="tab" aria-selected="false">Create Route Manually</button>
           <button id="modeRegions" role="tab" aria-selected="false">Regions</button>
         </div>
       </div>
 
       <!-- URL section -->
-      <div id="urlSection" class="section" style="display:none;">
+      <div id="urlSection" class="section">
         <label for="gmapsUrl">Google Maps Directions URL</label>
         <div class="row">
           <input id="gmapsUrl" type="text" placeholder="https://www.google.com/maps/dir/Start/WP1/.../End or ?api=1&origin=...&destination=...&waypoints=..." />
-          <div style="display:flex; gap:8px; align-items:end; justify-content:flex-end;">
-            <button id="parseBtn" class="secondary">Parse URL</button>
-          </div>
+          <div style="display:flex; gap:8px; align-items:end; justify-content:flex-end;"><button id="parseBtn" class="secondary">Parse URL</button></div>
         </div>
         <div class="legend">Short links supported; if a <code>maps.app.goo.gl</code> link fails due to CORS, open it once and paste the expanded URL.</div>
       </div>
 
-      <!-- Manual waypoint section (no empty rows by default) -->
-      <div id="manualSection" class="section">
+      <!-- Manual waypoint section -->
+      <div id="manualSection" class="section" style="display:none;">
         <div class="wp-header">
-          <div><span class="badge">Waypoints</span> (click map to add)</div>
+          <div><span class="badge">Waypoints</span> (max 10)</div>
           <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
             <button id="addStopBtn" class="ghost">+ Add Stop</button>
             <button id="clearStopsBtn" class="danger">Clear</button>
+            <span class="legend">(Clicks on the map automatically add the next stop)</span>
           </div>
         </div>
         <div id="wpList" class="wp-list"></div>
-        <div class="legend">Click the map to append a stop. Drag pins to adjust; ▲/▼ to reorder.</div>
+        <div class="legend">Order matters: top is origin; bottom is destination. Drag pins on the map to adjust locations.</div>
       </div>
 
       <!-- Regions section -->
@@ -110,16 +107,15 @@
           </div>
         </div>
         <div class="row">
-          <div class="typeahead-wrap">
+          <div>
             <label for="regionName">Find Region by Name or ZIP (US)</label>
-            <input id="regionName" type="text" autocomplete="off" placeholder="e.g., Tilden Park, Berkeley CA or 94618" />
-            <div id="regionSuggest" class="typeahead" style="display:none;"></div>
+            <input id="regionName" type="text" placeholder="e.g., Berkeley, CA or 94618" />
           </div>
           <div style="display:flex; align-items:end; justify-content:flex-end;">
             <button id="findRegionBtn" class="secondary">Find Region</button>
           </div>
         </div>
-        <div class="legend">Start typing to see the top 5 matches with state/country; pick one to load its boundary. Or draw a polygon on the map.</div>
+        <div class="legend">Search uses OpenStreetMap (Nominatim) with polygon boundaries, or draw a polygon on the map.</div>
       </div>
 
       <!-- Common controls -->
@@ -128,11 +124,12 @@
           <label for="bufferRadius">Buffer Radius</label>
           <select id="bufferRadius"><option value="10">10 m</option><option value="25" selected>25 m</option><option value="50">50 m</option><option value="100">100 m</option></select>
         </div>
+        <div style="display:flex; gap:8px; align-items:end; justify-content:flex-end;"><button id="runBtn" class="blue">Run (Route/Region) & Buffer</button></div>
       </div>
 
-      <!-- Advanced buffering options (expandable; defaults steps 6, simplify 7m, precision 5) -->
+      <!-- Advanced buffering options (expandable; closed by default) -->
       <div class="section">
-        <details id="advPanel" class="adv" open>
+        <details id="advPanel" class="adv">
           <summary>Advanced buffering</summary>
           <div class="row-3" style="margin-top:10px;">
             <div>
@@ -148,17 +145,13 @@
               <input id="advPrecision" type="number" min="0" max="10" step="1" value="5" />
             </div>
           </div>
-          <div class="legend">Higher arc smoothness creates smoother round corners but increases vertices. Simplify removes small wiggles using the meter tolerance (applied after buffering). Precision rounds output coordinates.</div>
+          <div class="legend">Higher arc smoothness creates smoother round corners but increases vertices. Simplify removes small wiggles using the given meter tolerance (applied after buffering). Precision rounds output coordinates.</div>
         </details>
-      </div>
-
-      <div class="section" style="display:flex; gap:8px; align-items:center; justify-content:flex-end;">
-        <button id="runBtn" class="blue">Run (Route/Region) & Buffer</button>
       </div>
 
       <div id="loading">⏳ Working... Please wait.</div>
       <div id="errorBox" class="error"></div>
-      <div class="bar"></div>
+      <div class="bar" style="height:1px; background:var(--border); margin:10px 0"></div>
 
       <!-- Output -->
       <div class="section">
@@ -170,122 +163,119 @@
           <label><input type="radio" name="exportFmt" value="wkt" checked> WKT</label>
           <label><input type="radio" name="exportFmt" value="geojson"> GeoJSON</label>
           <label><input type="radio" name="exportFmt" value="kml"> KML</label>
+          <label><input type="radio" name="exportFmt" value="shp"> Shapefile (.zip)</label>
         </div>
         <label for="outputText">Preview</label>
         <textarea id="outputText" readonly placeholder="Output will appear here after routing/buffering."></textarea>
         <div style="margin-top:8px; display:flex; gap:8px;"><button id="downloadBtn" class="secondary">Download</button></div>
       </div>
 
-      <div class="legend">• Manual mode: click map to add stops; drag pins to adjust; route/buffer update automatically.
-      • Regions: type to see 5 candidates (with state/country), or draw a polygon; we buffer whichever you choose.
+      <div class="legend">• Manual mode: clicks on the map add stops; drag pins to adjust; route/buffer update automatically.
+      • Regions: search for a named region or enter a US ZIP to fetch the ZIP polygon; you can also draw a polygon.
       • Output: Switch geometry & format to preview; Download saves the active selection.</div>
     </div>
 
     <div id="map"></div>
   </main>
 
+  <!-- Scripts -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
   <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
   <script src="https://unpkg.com/wellknown@0.5.0/wellknown.js"></script>
+  <script src="https://unpkg.com/shp-write@0.3.3/shpwrite.js"></script>
+
   <script>
-    // ---------- Global state (guarded) ----------
-    var state = window.RBV_STATE || {
-      map:null, baseLayer:null, baseLight:null, baseDark:null,
-      routeLayer:null, bufferLayer:null, regionLayer:null,
-      markers:[], lastPoints:null, lastRoute:null, lastBuffer:null,
-      regionFeature:null, fallbackQueue:[], maxStops:10, mode:'manual',
-      suggestIdx:-1, suggestItems:[]
-    };
-    window.RBV_STATE = state;
+    // -------- State --------
+    var state = { map:null, routeLayer:null, bufferLayer:null, regionLayer:null, markers:[], lastPoints:null, lastRoute:null, lastBuffer:null, regionFeature:null, fallbackQueue:[], maxStops:10, mode:'url' };
 
-    // ---------- UI helpers ----------
-    function setLoading(x){ var el=document.getElementById('loading'); if(el) el.style.display = x ? 'block' : 'none'; var p=document.getElementById('parseBtn'); if(p) p.disabled = x || state.mode!=='url'; var rb=document.getElementById('runBtn'); if(rb) rb.disabled = x; }
-    function showError(c,m,e){ var b=document.getElementById('errorBox'); if(!b) return; b.style.display='block'; b.textContent='['+c+'] '+m+(e?'\n'+e:''); }
-    function clearError(){ var b=document.getElementById('errorBox'); if(!b) return; b.style.display='none'; b.textContent=''; }
+    // -------- UI helpers --------
+    function setLoading(x){ document.getElementById('loading').style.display = x ? 'block' : 'none'; var p=document.getElementById('parseBtn'); if(p) p.disabled=x||state.mode!=='url'; document.getElementById('runBtn').disabled=x; }
+    function showError(c,m,e){ var b=document.getElementById('errorBox'); b.style.display='block'; b.textContent='['+c+'] '+m+(e?'\n'+e:''); }
+    function clearError(){ var b=document.getElementById('errorBox'); b.style.display='none'; b.textContent=''; }
 
-    // ---------- Map init + base layers (Dark default) ----------
+    // -------- Map init & resets --------
     function initMap(){
-      state.map = L.map('map', { zoomControl: true }).setView([37.8740,-122.2570], 12); // center near Berkeley
-      state.baseLight = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19, attribution: '&copy; OpenStreetMap contributors' });
-      state.baseDark  = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom:19, attribution: '&copy; OpenStreetMap & CARTO' });
-      // Default theme: dark
-      state.baseLayer = state.baseDark.addTo(state.map);
-
-      // Map click to add stops (always on in manual mode)
+      state.map=L.map('map',{zoomControl:true}).setView([37.7749,-122.4194],12);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19, attribution:'&copy; OpenStreetMap contributors'}).addTo(state.map);
+      // Click-to-add (manual only)
       state.map.on('click', function(evt){ if(state.mode!=='manual') return; var lat=evt.latlng.lat, lng=evt.latlng.lng; addWaypointRow(lat.toFixed(6)+','+lng.toFixed(6)); if(!Array.isArray(state.lastPoints)) state.lastPoints=[]; state.lastPoints.push({lat:lat,lng:lng}); placeMarkers(state.lastPoints); if(state.lastPoints.length>=2){ rerouteFromLastPoints(); } });
-
-      // Leaflet.draw (Regions)
-      var drawOptions={ position:'topright', draw:{ polygon:true, polyline:false, rectangle:false, circle:false, marker:false, circlemarker:false }, edit:false };
-      var drawControl = new L.Control.Draw(drawOptions); state.map.addControl(drawControl);
-      state.map.on(L.Draw.Event.CREATED, function (e){ if(state.mode!=='regions') return; var layer=e.layer; var gj=layer.toGeoJSON(); var feat={ type:'Feature', properties:{}, geometry: gj.geometry }; setRegionFeature(feat); });
+      // Draw (regions)
+      var drawCtl=new L.Control.Draw({ position:'topright', draw:{ polygon:true, polyline:false, rectangle:false, circle:false, marker:false, circlemarker:false }, edit:false });
+      state.map.addControl(drawCtl);
+      state.map.on(L.Draw.Event.CREATED, function(e){ if(state.mode!=='regions') return; var layer=e.layer; var feat={ type:'Feature', properties:{}, geometry: layer.toGeoJSON().geometry }; setRegionFeature(feat); });
     }
+    function clearMapGeoms(){ try{ if(state.routeLayer){ state.map.removeLayer(state.routeLayer); state.routeLayer=null; } if(state.bufferLayer){ state.map.removeLayer(state.bufferLayer); state.bufferLayer=null; } if(state.regionLayer){ state.map.removeLayer(state.regionLayer); state.regionLayer=null; } clearMarkers(); state.lastPoints=null; state.lastRoute=null; state.lastBuffer=null; state.regionFeature=null; document.getElementById('outputText').value=''; var box=document.getElementById('geomChoices'); if(box) box.innerHTML=''; }catch(e){} }
 
-    function setMapTheme(theme){ try{ if(!state.map) return; var next = (theme==='light') ? state.baseLight : state.baseDark; if(state.baseLayer===next) return; if(state.baseLayer){ state.map.removeLayer(state.baseLayer); } state.baseLayer = next.addTo(state.map); } catch(e){} }
-
-    // ---------- Parsers / utils ----------
+    // -------- URL helpers --------
     function isLatLng(t){ if(!t) return null; var c=decodeURIComponent(t).trim(); var m=c.match(/^\s*(-?\d+(?:\.\d+)?)\s*[ ,]\s*(-?\d+(?:\.\d+)?)\s*$/); if(!m) return null; var lat=parseFloat(m[1]), lng=parseFloat(m[2]); if(isFinite(lat)&&isFinite(lng)&&Math.abs(lat)<=90&&Math.abs(lng)<=180) return [lat,lng]; return null; }
     function isUSZip(t){ return /^\d{5}(?:-\d{4})?$/.test(String(t).trim()); }
     function extractLatLngPairsFromUrl(url){ var pairs=[]; var r=/!1d(-?\d+(?:\.\d+)?)!2d(-?\d+(?:\.\d+)?)/g; var m; while((m=r.exec(url))!==null){ var lon=parseFloat(m[1]), lat=parseFloat(m[2]); if(isFinite(lat)&&isFinite(lon)) pairs.push({lat:lat,lng:lon}); } return pairs; }
-    async function resolveShortUrl(u){ try{ var resp=await fetch(u,{redirect:'follow',method:'GET'}); return (resp && resp.url)?resp.url:u; } catch(e){ return u; } }
-    function parseGMapsUrl(u){ try{ var url=new URL(u); if(url.searchParams.get('api')==='1' && (url.searchParams.get('origin')||url.searchParams.get('destination'))){ var pts=[], o=url.searchParams.get('origin')||'', d=url.searchParams.get('destination')||'', w=url.searchParams.get('waypoints')||''; var push=function(s){ if(!s) return; var seg=s.replace(/^via:/i,''); var ll=isLatLng(seg); pts.push(ll||decodeURIComponent(seg).trim()); }; push(o); if(w) w.split('|').forEach(push); push(d); return {points:pts}; } var path=url.pathname; var i=path.indexOf('/maps/dir'); if(i!==-1){ var segs=path.slice(i+'/maps/dir'.length).split('/').map(function(s){return s.trim();}); var cut=segs.findIndex(function(s){return s.startsWith('@');}); if(cut>=0) segs=segs.slice(0,cut); segs=segs.filter(Boolean); var pts2=segs.slice(0,state.maxStops).map(function(s){ var dec=decodeURIComponent(s); if(dec.startsWith('loc:')){ var ll=isLatLng(dec.slice(4)); return ll||dec; } return isLatLng(dec)||dec; }); return {points:pts2}; } return null; } catch(e){ return null; } }
+    async function resolveShortUrl(u){ try{ var resp=await fetch(u,{redirect:'follow',method:'GET'}); return (resp&&resp.url)?resp.url:u; } catch(e){ return u; } }
+    function parseGMapsUrl(u){ try{ var url=new URL(u); if(url.searchParams.get('api')==='1'&&(url.searchParams.get('origin')||url.searchParams.get('destination'))){ var pts=[], o=url.searchParams.get('origin')||'', d=url.searchParams.get('destination')||'', w=url.searchParams.get('waypoints')||''; var push=function(s){ if(!s) return; var seg=s.replace(/^via:/i,''); var ll=isLatLng(seg); pts.push(ll||decodeURIComponent(seg).trim()); }; push(o); if(w) w.split('|').forEach(push); push(d); return {points:pts}; } var path=url.pathname; var i=path.indexOf('/maps/dir'); if(i!==-1){ var segs=path.slice(i+'/maps/dir'.length).split('/').map(function(s){return s.trim();}); var cut=segs.findIndex(function(s){return s.startsWith('@');}); if(cut>=0) segs=segs.slice(0,cut); segs=segs.filter(Boolean); var pts2=segs.slice(0,state.maxStops).map(function(s){ var dec=decodeURIComponent(s); if(dec.startsWith('loc:')){ var ll=isLatLng(dec.slice(4)); return ll||dec; } return isLatLng(dec)||dec; }); return {points:pts2}; } return null; } catch(e){ return null; } }
 
-    // ---------- Waypoint editor ----------
+    // -------- Waypoint editor + typeahead --------
     function renderWaypointList(values){ var list=document.getElementById('wpList'); if(!list) return; list.innerHTML=''; (values||[]).slice(0,state.maxStops).forEach(function(v){ addWaypointRow(v); }); updateIndices(); }
-    function addWaypointRow(value){ value=(typeof value==='undefined')?'':value; var list=document.getElementById('wpList'); if(!list||list.children.length>=state.maxStops) return; var item=document.createElement('div'); item.className='wp-item'; item.innerHTML='<div class="index">1</div><input type="text" class="wp-input" placeholder="Address, business name, or lat,lng" /><button class="ghost up" title="Move up">▲</button><button class="ghost del" title="Remove">✕</button>';
+    function addWaypointRow(value){ value=(typeof value==='undefined')?'':value; var list=document.getElementById('wpList'); if(!list||list.children.length>=state.maxStops) return; var item=document.createElement('div'); item.className='wp-item'; item.innerHTML='\
+      <div class="index">1</div>\
+      <input type="text" class="wp-input" placeholder="Address, business name, or lat,lng" />\
+      <button class="ghost up" title="Move up">▲</button>\
+      <button class="ghost down" title="Move down">▼</button>\
+      <button class="danger del" title="Remove">✕</button>';
       list.appendChild(item);
       var input=item.querySelector('.wp-input'); input.value=typeof value==='string'?value:(Array.isArray(value)?(value[0]+","+value[1]):(value||''));
+      // Typeahead attach
+      attachTypeahead(input, function(sel){ input.value=sel; });
       item.querySelector('.del').addEventListener('click',function(){ item.remove(); updateIndices(); clearMarkers(); state.lastPoints=null; });
       item.querySelector('.up').addEventListener('click',function(){ var prev=item.previousElementSibling; if(prev) list.insertBefore(item,prev); updateIndices(); });
-      var down=document.createElement('button'); down.className='ghost'; down.title='Move down'; down.textContent='▼'; down.addEventListener('click',function(){ var next=item.nextElementSibling; if(next) list.insertBefore(next,item); updateIndices(); }); item.appendChild(down);
+      item.querySelector('.down').addEventListener('click',function(){ var next=item.nextElementSibling; if(next) list.insertBefore(next,item); updateIndices(); });
       updateIndices(); return item; }
     function updateIndices(){ var list=document.getElementById('wpList'); if(!list) return; Array.prototype.slice.call(list.children).forEach(function(el,idx){ el.querySelector('.index').textContent=String(idx+1); }); }
     function getWaypointValues(){ return Array.prototype.slice.call(document.querySelectorAll('.wp-input')).map(function(i){ return i.value.trim(); }).filter(Boolean); }
 
-    // ---------- Marker pins ----------
+    // --- Typeahead core (Nominatim) ---
+    function attachTypeahead(input, onPick){ var dd=null, items=[], activeIdx=-1, aborter=null; function close(){ if(dd){ dd.remove(); dd=null; } activeIdx=-1; if(aborter){ aborter.abort(); aborter=null; } }
+      function render(list){ if(!dd){ dd=document.createElement('div'); dd.className='ta'; input.parentElement.appendChild(dd); } dd.innerHTML=''; list.forEach(function(r,ix){ var div=document.createElement('div'); div.className='ta-item'+(ix===activeIdx?' active':''); div.textContent=r.display_name || r.name || r; div.addEventListener('mousedown', function(e){ e.preventDefault(); onPick(r.display_name || r.name || r); close(); }); dd.appendChild(div); }); if(list.length===0){ close(); } }
+      function debounce(fn, ms){ var t; return function(){ var a=arguments; clearTimeout(t); t=setTimeout(function(){ fn.apply(null,a); }, ms); } }
+      async function query(q){ if(!q || q.length<3) { close(); return; } try{ if(aborter) aborter.abort(); aborter=new AbortController(); var url='https://nominatim.openstreetmap.org/search?format=json&q='+encodeURIComponent(q)+'&limit=5&addressdetails=0'; var resp=await fetch(url,{ signal:aborter.signal, headers:{'Accept':'application/json'} }); if(!resp.ok) return; var data=await resp.json(); items=data||[]; activeIdx=-1; render(items); } catch(e){ /* ignore */ } }
+      var onInput=debounce(function(){ query(input.value.trim()); }, 200);
+      input.addEventListener('input', onInput);
+      input.addEventListener('keydown', function(e){ if(!dd) return; if(e.key==='ArrowDown'){ e.preventDefault(); activeIdx=Math.min(items.length-1, activeIdx+1); render(items); } else if(e.key==='ArrowUp'){ e.preventDefault(); activeIdx=Math.max(0, activeIdx-1); render(items); } else if(e.key==='Enter'){ if(activeIdx>=0 && items[activeIdx]){ e.preventDefault(); onPick(items[activeIdx].display_name || items[activeIdx].name || ''); close(); } }
+      });
+      input.addEventListener('blur', function(){ setTimeout(close, 150); });
+    }
+
+    // Attach typeahead to Regions input too
+    function attachRegionTypeahead(){ var el=document.getElementById('regionName'); if(!el) return; attachTypeahead(el, function(sel){ el.value=sel; }); el.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); document.getElementById('findRegionBtn').click(); } }); }
+
+    // -------- Markers for stops --------
     function clearMarkers(){ state.markers.forEach(function(m){ state.map.removeLayer(m); }); state.markers=[]; }
-    function pinIcon(idx,total){ var color=(idx===0)?'#22c55e':((idx===total-1)?'#ef4444':'#0ea5e9'); var html=''
-        +'<svg width="42" height="42" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">'
-        +' <path d="M12 2C8.41 2 5.5 4.91 5.5 8.5C5.5 12.96 12 21.5 12 21.5C12 21.5 18.5 12.96 18.5 8.5C18.5 4.91 15.59 2 12 2Z" fill="'+color+'" stroke="#ffffff" stroke-width="1" />'
-        +' <circle cx="12" cy="8.5" r="3.25" fill="#ffffff" />'
-        +'</svg>'
-        +'<div style="position:absolute; top:7px; left:0; width:42px; text-align:center; font-weight:800; color:#0b1220; font-size:12px;">'+(idx+1)+'</div>';
-      return L.divIcon({ className:'', html:html, iconSize:[42,42], iconAnchor:[21,38], popupAnchor:[0,-38] }); }
-    function placeMarkers(points){ clearMarkers(); if(!points||!points.length) return; points.forEach(function(p,i){ var mk=L.marker([p.lat,p.lng],{draggable:true,icon:pinIcon(i,points.length)}).addTo(state.map); mk.bindTooltip('Stop '+(i+1),{permanent:true,direction:'top',className:'marker-label',offset:[0,-16]}); mk.on('dragend',function(e){ onMarkerDragEnd(i,e); }); state.markers.push(mk); }); }
-    function refreshMarkerIcons(){ var total=state.markers.length; state.markers.forEach(function(m,i){ m.setIcon(pinIcon(i,total)); var tt=(typeof m.getTooltip==='function')?m.getTooltip():null; if(tt && typeof tt.setContent==='function') tt.setContent('Stop '+(i+1)); else m.bindTooltip('Stop '+(i+1), {permanent:true,direction:'top',className:'marker-label',offset:[0,-16]}); }); }
-    async function onMarkerDragEnd(idx,e){ try{ var ll=e.target.getLatLng(); if(!Array.isArray(state.lastPoints)||!state.lastPoints[idx]) return; state.lastPoints[idx]={lat:ll.lat, lng:ll.lng}; var inputs=document.querySelectorAll('.wp-input'); if(inputs[idx]) inputs[idx].value=ll.lat.toFixed(6)+','+ll.lng.toFixed(6); await rerouteFromLastPoints(); } catch(err){ console.error(err); showError('DRAG_ERROR', err.message||String(err)); } }
+    function markerIcon(idx,total){ var cls=(idx===0)?'origin':((idx===total-1)?'dest':''); return L.divIcon({ className:'', html:'<div class="num-marker '+cls+'">'+(idx+1)+'</div>', iconSize:[28,28], iconAnchor:[14,14] }); }
+    function placeMarkers(points){ clearMarkers(); if(!points||!points.length) return; points.forEach(function(p,i){ var mk=L.marker([p.lat,p.lng],{draggable:true,icon:markerIcon(i,points.length)}).addTo(state.map); mk.bindTooltip('Stop '+(i+1),{permanent:true,direction:'top',className:'marker-label',offset:[0,-12]}); mk.on('dragend',function(e){ onMarkerDragEnd(i,e); }); state.markers.push(mk); }); }
+    async function onMarkerDragEnd(idx,e){ try{ var ll=e.target.getLatLng(); if(!Array.isArray(state.lastPoints)||!state.lastPoints[idx]) return; state.lastPoints[idx]={lat:ll.lat,lng:ll.lng}; var inputs=document.querySelectorAll('.wp-input'); if(inputs[idx]) inputs[idx].value=ll.lat.toFixed(6)+','+ll.lng.toFixed(6); await rerouteFromLastPoints(); } catch(err){ console.error(err); showError('DRAG_ERROR', err.message||String(err)); } }
 
-    // ---------- Advanced controls ----------
-    function getAdvancedSettings(){ var steps=parseInt((document.getElementById('advSteps')||{value:'6'}).value,10); if(!isFinite(steps)||steps<1) steps=6; var tolM=parseFloat((document.getElementById('advSimplify')||{value:'7'}).value); if(!isFinite(tolM)||tolM<0) tolM=7; var prec=parseInt((document.getElementById('advPrecision')||{value:'5'}).value,10); if(!isFinite(prec)||prec<0) prec=5; return { steps:steps, simplifyMeters:tolM, precision:prec }; }
-    function getBufferRadius(){ var el=document.getElementById('bufferRadius'); var v = el && el.value ? parseInt(el.value,10) : 25; return (isFinite(v)&&v>0)?v:25; }
+    // -------- Advanced settings --------
+    function getAdvancedSettings(){ var steps=parseInt(document.getElementById('advSteps').value,10); if(!isFinite(steps)||steps<1) steps=6; var tolM=parseFloat(document.getElementById('advSimplify').value); if(!isFinite(tolM)||tolM<0) tolM=7; var prec=parseInt(document.getElementById('advPrecision').value,10); if(!isFinite(prec)||prec<0) prec=5; return { steps:steps, simplifyMeters:tolM, precision:prec }; }
 
-    // ---------- Geocoding / Routing / Buffering ----------
+    // -------- Geocoding / Routing / Buffering --------
     async function geocodeIfNeeded(input){ if(Array.isArray(input)) return {lat:input[0], lng:input[1]}; var ll=isLatLng(input); if(ll) return {lat:ll[0], lng:ll[1]}; var q=String(input||'').trim(); if(!q) throw new Error('Empty stop value'); var url='https://nominatim.openstreetmap.org/search?format=json&q='+encodeURIComponent(q)+'&limit=1&addressdetails=0'; var resp=await fetch(url,{headers:{'Accept':'application/json'}}); if(!resp.ok) throw new Error('Geocoding failed ('+resp.status+')'); var data=await resp.json(); if(!Array.isArray(data)||!data.length) throw new Error('No geocoding results'); var lat=data[0].lat, lon=data[0].lon; return {lat:parseFloat(lat), lng:parseFloat(lon)}; }
     async function fetchRouteForPoints(pointsLL){ if(!Array.isArray(pointsLL)||pointsLL.length<2) throw new Error('Need at least 2 stops'); if(pointsLL.length>state.maxStops) throw new Error('Maximum '+state.maxStops+' stops supported'); var coords=pointsLL.map(function(p){ return p.lng+','+p.lat; }).join(';'); var url='https://router.project-osrm.org/route/v1/driving/'+coords+'?overview=full&geometries=geojson&steps=false'; var resp=await fetch(url); if(!resp.ok) throw new Error('Routing failed ('+resp.status+')'); var data=await resp.json(); if(!data||data.code!=='Ok'||!data.routes||!data.routes.length) throw new Error('No route found'); return data.routes[0].geometry; }
+
     function postProcessBuffer(feature, settings){ var out=feature||null; if(!out) return out; var tolM=settings&&settings.simplifyMeters; if(isFinite(tolM)&&tolM>0){ var tolDeg=tolM/111320; try{ out=turf.simplify(out,{tolerance:tolDeg, highQuality:true}); }catch(e){} } var prec=settings&&settings.precision; if(isFinite(prec)&&prec>=0){ out=roundFeatureCoords(out,prec); } return out; }
-    function roundFeatureCoords(feat,precision){ function rnd(v){ var p=Math.pow(10,precision); return Math.round(v*p)/p; } function walk(coords){ if(typeof coords[0]==='number'){ return [rnd(coords[0]), rnd(coords[1])]; } return coords.map(walk); } var o=JSON.parse(JSON.stringify(feat)); if(o && o.geometry && o.geometry.coordinates) o.geometry.coordinates=walk(o.geometry.coordinates); return o; }
+    function roundFeatureCoords(feat, precision){ function rnd(v){ var p=Math.pow(10,precision); return Math.round(v*p)/p; } function walk(coords){ if(typeof coords[0]==='number'){ return [rnd(coords[0]), rnd(coords[1])]; } return coords.map(walk); } var o=JSON.parse(JSON.stringify(feat)); if(o&&o.geometry&&o.geometry.coordinates) o.geometry.coordinates=walk(o.geometry.coordinates); return o; }
     function bufferLine(lineGeom, meters, settings){ var line=turf.lineString(lineGeom.coordinates); var km=(Number(meters)||25)/1000; var steps=(settings&&settings.steps)||6; var buf=turf.buffer(line, km, {units:'kilometers', steps:steps}); if(!buf||!buf.geometry) throw new Error('Buffering failed'); return postProcessBuffer(buf, settings); }
     function bufferPolygon(polyFeature, meters, settings){ var km=(Number(meters)||25)/1000; var steps=(settings&&settings.steps)||6; var buf=turf.buffer(polyFeature, km, {units:'kilometers', steps:steps}); if(!buf||!buf.geometry) throw new Error('Buffering failed'); return postProcessBuffer(buf, settings); }
 
-    async function rerouteFromLastPoints(){ setLoading(true); clearError(); try{ if(!state.lastPoints||state.lastPoints.length<2) throw new Error('Need at least 2 stops'); var lineGeom=await fetchRouteForPoints(state.lastPoints); var radiusMeters=getBufferRadius(); var adv=getAdvancedSettings(); var bufferFeature=bufferLine(lineGeom, radiusMeters, adv); placeMarkers(state.lastPoints); render(lineGeom, bufferFeature, null); } catch(e){ console.error(e); showError('PROCESSING_ERROR', e.message||String(e)); } finally{ setLoading(false); } }
+    async function rerouteFromLastPoints(){ setLoading(true); clearError(); try{ if(!state.lastPoints||state.lastPoints.length<2) throw new Error('Need at least 2 stops'); var lineGeom=await fetchRouteForPoints(state.lastPoints); var radius=parseInt(document.getElementById('bufferRadius').value,10)||25; var adv=getAdvancedSettings(); var bufferFeature=bufferLine(lineGeom, radius, adv); placeMarkers(state.lastPoints); render(lineGeom, bufferFeature, null); } catch(e){ console.error(e); showError('PROCESSING_ERROR', e.message||String(e)); } finally{ setLoading(false); } }
 
-    // ---------- Regions: search + typeahead (guarded) ----------
-    async function findRegionByName(name){ name=String(name||'').trim(); var resultFeat=null; try{ if(isUSZip(name)){ var zipFeat=await fetchUSZipPolygon(name); if(zipFeat) return zipFeat; } var url='https://nominatim.openstreetmap.org/search?format=json&q='+encodeURIComponent(name)+'&limit=5&polygon_geojson=1&addressdetails=0'; var resp=await fetch(url,{headers:{'Accept':'application/json'}}); if(!resp.ok) throw new Error('Region lookup failed ('+resp.status+')'); var data=await resp.json(); if(!Array.isArray(data)||!data.length) throw new Error('No region results'); for(var i=0;i<data.length;i++){ if(data[i].geojson && data[i].geojson.type && data[i].geojson.type!=='Point'){ resultFeat={type:'Feature', properties:{ name:data[i].display_name||'Region' }, geometry:data[i].geojson}; break; } } if(!resultFeat){ resultFeat={type:'Feature', properties:{ name:data[0].display_name||'Region' }, geometry:data[0].geojson || { type:'Point', coordinates:[ parseFloat(data[0].lon), parseFloat(data[0].lat) ] } }; } return resultFeat; } catch(e){ throw e; } }
-    function osmTypeLetter(osmType){ if(osmType==='node') return 'N'; if(osmType==='way') return 'W'; if(osmType==='relation') return 'R'; return ''; }
-    var suggestTimer=null;
-    function scheduleSuggest(){ if(suggestTimer) clearTimeout(suggestTimer); suggestTimer=setTimeout(runSuggest, 250); }
-    async function runSuggest(){ try{ if(!state||typeof state!=='object') return; var box=document.getElementById('regionSuggest'); if(!box) return; var q=(document.getElementById('regionName')||{value:''}).value.trim(); state.suggestIdx=-1; state.suggestItems=[]; box.innerHTML=''; if(!q){ box.style.display='none'; return; } var items=[]; if(isUSZip(q)) items.push({ title:'ZIP '+q+' (United States)', meta:'Postal code boundary', specialZip:q, id:'zip-'+q }); var url='https://nominatim.openstreetmap.org/search?format=json&q='+encodeURIComponent(q)+'&limit=5&polygon_geojson=0&addressdetails=1'; var resp=await fetch(url,{headers:{'Accept':'application/json'}}); if(resp.ok){ var data=await resp.json(); for(var i=0;i<data.length;i++){ var d=data[i]||{}; var addr=d.address||{}; var stateName=addr.state||addr.region||addr.state_district||''; var country=addr.country||''; var city=addr.city||addr.town||addr.village||addr.county||''; var metaParts=[]; if(city) metaParts.push(city); if(stateName) metaParts.push(stateName); if(country) metaParts.push(country); var meta=metaParts.join(' • '); var title=(d.display_name||'').split(',')[0]||'(unnamed)'; items.push({ title:title, meta:meta, osm_id:d.osm_id, osm_type:d.osm_type, class:d.class, type:d.type }); } } renderSuggest(items); } catch(e){ var b=document.getElementById('regionSuggest'); if(b) b.style.display='none'; } }
-    function renderSuggest(items){ var box=document.getElementById('regionSuggest'); if(!box) return; state.suggestItems=items||[]; box.innerHTML=''; if(!items||!items.length){ box.style.display='none'; return; } for(var i=0;i<items.length;i++){ var it=items[i]; var div=document.createElement('div'); div.className='item'; div.setAttribute('data-idx', String(i)); var t=document.createElement('div'); t.className='title'; t.textContent=it.title||'(unnamed)'; var m=document.createElement('div'); m.className='meta'; m.textContent=it.meta||''; div.appendChild(t); div.appendChild(m); div.addEventListener('mousedown', function(ev){ ev.preventDefault(); var idx=parseInt(this.getAttribute('data-idx'),10); chooseSuggest(idx); }); box.appendChild(div); } box.style.display='block'; }
-    async function chooseSuggest(idx){ var items=state.suggestItems||[]; if(idx<0||idx>=items.length) return; var it=items[idx]; hideSuggest(); try{ setLoading(true); clearError(); if(it.specialZip){ var feat=await fetchUSZipPolygon(it.specialZip); if(!feat) throw new Error('ZIP boundary not found'); setRegionFeature(feat); return; } var letter=osmTypeLetter(it.osm_type); if(!letter){ var f=await findRegionByName(it.title); setRegionFeature(f); return; } var lookup='https://nominatim.openstreetmap.org/lookup?format=json&osm_ids='+letter+it.osm_id+'&polygon_geojson=1&addressdetails=0'; var resp=await fetch(lookup,{headers:{'Accept':'application/json'}}); if(!resp.ok) throw new Error('Lookup failed ('+resp.status+')'); var data=await resp.json(); if(!Array.isArray(data)||!data.length||!data[0].geojson) throw new Error('No polygon available'); var feat={ type:'Feature', properties:{ name:(data[0].display_name||it.title) }, geometry:data[0].geojson }; setRegionFeature(feat); } catch(e){ console.error(e); showError('REGION_ERROR', e.message||String(e)); } finally{ setLoading(false); } }
-    function hideSuggest(){ var box=document.getElementById('regionSuggest'); if(box) box.style.display='none'; state.suggestIdx=-1; }
-
-    async function fetchUSZipPolygon(zip){ try{ var url1='https://nominatim.openstreetmap.org/search?format=json&postalcode='+encodeURIComponent(zip)+'&countrycodes=us&limit=5&polygon_geojson=1&addressdetails=0'; var r1=await fetch(url1,{headers:{'Accept':'application/json'}}); if(r1.ok){ var d1=await r1.json(); for(var i=0;i<d1.length;i++){ var it=d1[i]; if(it.geojson && it.geojson.type && it.geojson.type!=='Point'){ if((it.class==='boundary'&&it.type==='postal_code')||(it.addresstype==='postcode')){ return { type:'Feature', properties:{ name: it.display_name || ('ZIP '+zip) }, geometry: it.geojson }; } } } for(var j=0;j<d1.length;j++){ var it2=d1[j]; if(it2.geojson && it2.geojson.type && it2.geojson.type!=='Point'){ return { type:'Feature', properties:{ name: it2.display_name || ('ZIP '+zip) }, geometry: it2.geojson }; } } } var url2='https://nominatim.openstreetmap.org/search?format=json&q='+encodeURIComponent(zip+' USA')+'&limit=5&polygon_geojson=1&addressdetails=0'; var r2=await fetch(url2,{headers:{'Accept':'application/json'}}); if(r2.ok){ var d2=await r2.json(); for(var k=0;k<d2.length;k++){ var it3=d2[k]; if(it3.geojson && it3.geojson.type && it3.geojson.type!=='Point'){ return { type:'Feature', properties:{ name: it3.display_name || ('ZIP '+zip) }, geometry: it3.geojson }; } } } return null; } catch(e){ return null; } }
-
-    // ---------- Render & output ----------
+    // -------- Regions --------
+    async function findRegionByName(name){ name=String(name||'').trim(); var result=null; try{ if(isUSZip(name)){ var z=await fetchUSZipPolygon(name); if(z) return z; } var url='https://nominatim.openstreetmap.org/search?format=json&q='+encodeURIComponent(name)+'&limit=5&polygon_geojson=1&addressdetails=0'; var resp=await fetch(url,{headers:{'Accept':'application/json'}}); if(!resp.ok) throw new Error('Region lookup failed ('+resp.status+')'); var data=await resp.json(); if(!Array.isArray(data)||!data.length) throw new Error('No region results'); for(var i=0;i<data.length;i++){ if(data[i].geojson && data[i].geojson.type && data[i].geojson.type!=='Point'){ result={ type:'Feature', properties:{ name:data[i].display_name||'Region' }, geometry:data[i].geojson }; break; } } if(!result){ result={ type:'Feature', properties:{ name:data[0].display_name||'Region' }, geometry:data[0].geojson || { type:'Point', coordinates:[ parseFloat(data[0].lon), parseFloat(data[0].lat) ] } }; } return result; } catch(e){ throw e; } }
+    async function fetchUSZipPolygon(zip){ try{ var url1='https://nominatim.openstreetmap.org/search?format=json&postalcode='+encodeURIComponent(zip)+'&countrycodes=us&limit=5&polygon_geojson=1&addressdetails=0'; var r1=await fetch(url1,{headers:{'Accept':'application/json'}}); if(r1.ok){ var d1=await r1.json(); for(var i=0;i<d1.length;i++){ var it=d1[i]; if(it.geojson && it.geojson.type && it.geojson.type!=='Point'){ if((it.class==='boundary'&&it.type==='postal_code')||(it.addresstype==='postcode')){ return { type:'Feature', properties:{ name: it.display_name||('ZIP '+zip) }, geometry: it.geojson }; } } } for(var j=0;j<d1.length;j++){ var it2=d1[j]; if(it2.geojson && it2.geojson.type && it2.geojson.type!=='Point'){ return { type:'Feature', properties:{ name: it2.display_name||('ZIP '+zip) }, geometry: it2.geojson }; } } } var url2='https://nominatim.openstreetmap.org/search?format=json&q='+encodeURIComponent(zip+' USA')+'&limit=5&polygon_geojson=1&addressdetails=0'; var r2=await fetch(url2,{headers:{'Accept':'application/json'}}); if(r2.ok){ var d2=await r2.json(); for(var k=0;k<d2.length;k++){ var it3=d2[k]; if(it3.geojson && it3.geojson.type && it3.geojson.type!=='Point'){ return { type:'Feature', properties:{ name: it3.display_name||('ZIP '+zip) }, geometry: it3.geojson }; } } } return null; } catch(e){ return null; } }
     function setRegionFeature(feat){ state.regionFeature=feat; if(state.regionLayer){ state.map.removeLayer(state.regionLayer); state.regionLayer=null; } state.regionLayer=L.geoJSON(feat,{ style:{ color:'#f59e0b', weight:2, opacity:.9, fillColor:'#fbbf24', fillOpacity:.15 } }).addTo(state.map); try{ state.map.fitBounds(state.regionLayer.getBounds(),{padding:[20,20]}); }catch(e){} updateGeomChoices(); updateOutputText(); }
     function clearRegion(){ if(state.regionLayer){ state.map.removeLayer(state.regionLayer); state.regionLayer=null; } state.regionFeature=null; updateGeomChoices(); }
 
-    function render(lineGeom, bufferFeature, regionBuffer){ var map=state.map; if(state.routeLayer){ map.removeLayer(state.routeLayer); state.routeLayer=null; } if(state.bufferLayer){ map.removeLayer(state.bufferLayer); state.bufferLayer=null; } if(bufferFeature){ state.bufferLayer=L.geoJSON(bufferFeature,{ style:{ color:'#16a34a', weight:2, opacity:.9, fillColor:'#22c55e', fillOpacity:.25 } }).addTo(map); state.lastBuffer=bufferFeature; } if(lineGeom){ state.routeLayer=L.geoJSON({type:'Feature', geometry:lineGeom},{ style:{ color:'#2563eb', weight:4, opacity:.9 } }).addTo(map); state.lastRoute=lineGeom; } var layers=[]; if(state.bufferLayer) layers.push(state.bufferLayer); if(state.routeLayer) layers.push(state.routeLayer); if(state.regionLayer) layers.push(state.regionLayer); for(var i=0;i<state.markers.length;i++){ layers.push(state.markers[i]); } if(layers.length){ var group=new L.FeatureGroup(layers); try{ map.fitBounds(group.getBounds(),{padding:[20,20]}); }catch(e){} } updateGeomChoices(); updateOutputText(); refreshMarkerIcons(); }
+    // -------- Rendering & Output --------
+    function render(lineGeom, bufferFeature, regionBuffer){ var map=state.map; if(state.routeLayer){ map.removeLayer(state.routeLayer); state.routeLayer=null; } if(state.bufferLayer){ map.removeLayer(state.bufferLayer); state.bufferLayer=null; } if(bufferFeature){ state.bufferLayer=L.geoJSON(bufferFeature,{ style:{ color:'#16a34a', weight:2, opacity:.9, fillColor:'#22c55e', fillOpacity:.25 } }).addTo(map); state.lastBuffer=bufferFeature; } if(lineGeom){ state.routeLayer=L.geoJSON({type:'Feature', geometry:lineGeom},{ style:{ color:'#2563eb', weight:4, opacity:.9 } }).addTo(map); state.lastRoute=lineGeom; } var layers=[]; if(state.bufferLayer) layers.push(state.bufferLayer); if(state.routeLayer) layers.push(state.routeLayer); if(state.regionLayer) layers.push(state.regionLayer); for(var i=0;i<state.markers.length;i++){ layers.push(state.markers[i]); } if(layers.length){ var group=new L.FeatureGroup(layers); try{ map.fitBounds(group.getBounds(),{padding:[20,20]}); }catch(e){} } updateGeomChoices(); updateOutputText(); }
 
     function updateGeomChoices(){ var box=document.getElementById('geomChoices'); if(!box) return; var prev=document.querySelector('input[name="exportGeom"]:checked'); var prevVal=prev?prev.value:'buffer'; box.innerHTML=''; var opts=[]; if(state.lastBuffer) opts.push({val:'buffer',label:'Buffer Polygon'}); if(state.lastRoute) opts.push({val:'route',label:'Route Line'}); if(state.regionFeature) opts.push({val:'region',label:'Region Polygon'}); if(opts.length===0) opts.push({val:'buffer',label:'Buffer Polygon'}); for(var i=0;i<opts.length;i++){ var o=opts[i]; var wrap=document.createElement('label'); wrap.style.marginRight='12px'; var input=document.createElement('input'); input.type='radio'; input.name='exportGeom'; input.value=o.val; wrap.appendChild(input); wrap.appendChild(document.createTextNode(' '+o.label)); box.appendChild(wrap); } var radios=box.querySelectorAll('input[name="exportGeom"]'); Array.prototype.forEach.call(radios,function(r){ r.addEventListener('change', updateOutputText); }); var restored=false; Array.prototype.forEach.call(radios,function(r){ if(r.value===prevVal){ r.checked=true; restored=true; } }); if(!restored && radios.length){ radios[0].checked=true; } }
 
@@ -293,56 +283,25 @@
 
     function toKML(feature){ var geom=feature.geometry||feature; function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); } function coordsStr(c){ return c.map(function(x){ return x[0]+','+x[1]+',0'; }).join(' '); } function closeRing(r){ return (r.length && (r[0][0]!==r[r.length-1][0] || r[0][1]!==r[r.length-1][1])) ? r.concat([r[0]]) : r; } function poly(coords){ var outer=coords[0], inner=coords.slice(1); var k='<outerBoundaryIs><LinearRing><coordinates>'+coordsStr(closeRing(outer))+'</coordinates></LinearRing></outerBoundaryIs>'; inner.forEach(function(h){ k+='<innerBoundaryIs><LinearRing><coordinates>'+coordsStr(closeRing(h))+'</coordinates></LinearRing></innerBoundaryIs>'; }); return '<Polygon>'+k+'</Polygon>'; } var g=''; if(geom.type==='LineString'){ g='<LineString><coordinates>'+coordsStr(geom.coordinates)+'</coordinates></LineString>'; } else if(geom.type==='Polygon'){ g=poly(geom.coordinates); } else if(geom.type==='MultiPolygon'){ g=geom.coordinates.map(function(p){ return '<Placemark>'+poly(p)+'</Placemark>'; }).join(''); } else { throw new Error('KML format supports LineString, Polygon, MultiPolygon'); } var name=(feature.properties&&feature.properties.name)||'Export'; var pm=(geom.type==='MultiPolygon')?g:('<Placemark><name>'+esc(name)+'</name>'+g+'</Placemark>'); return '<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document>'+pm+'</Document></kml>'; }
 
-    function updateOutputText(){ var fmtEl=document.querySelector('input[name="exportFmt"]:checked'); var fmt=fmtEl?fmtEl.value:'wkt'; var txt=document.getElementById('outputText'); if(!txt) return; try{ var feat=pickExportGeometry(); if(fmt==='wkt'){ txt.value=wellknown.stringify(feat.geometry)||''; } else if(fmt==='geojson'){ txt.value=JSON.stringify(feat,null,2); } else if(fmt==='kml'){ txt.value=toKML(feat); } } catch(e){ txt.value='Output unavailable: '+(e.message||String(e)); } }
+    function updateOutputText(){ var fmtEl=document.querySelector('input[name="exportFmt"]:checked'); var fmt=fmtEl?fmtEl.value:'wkt'; var txt=document.getElementById('outputText'); try{ var feat=pickExportGeometry(); if(fmt==='wkt'){ txt.value=wellknown.stringify(feat.geometry)||''; } else if(fmt==='geojson'){ txt.value=JSON.stringify(feat,null,2); } else if(fmt==='kml'){ txt.value=toKML(feat); } else if(fmt==='shp'){ txt.value='Shapefile (.zip) will be downloaded. Preview is not available for binary formats.'; } } catch(e){ txt.value='Output unavailable: '+(e.message||String(e)); } }
 
-    function downloadCurrent(){ var fmtEl=document.querySelector('input[name="exportFmt"]:checked'); var fmt=fmtEl?fmtEl.value:'wkt'; var mime='text/plain', ext='txt'; if(fmt==='wkt'){ mime='text/plain'; ext='wkt'; } if(fmt==='geojson'){ mime='application/geo+json'; ext='geojson'; } if(fmt==='kml'){ mime='application/vnd.google-earth.kml+xml'; ext='kml'; } var text=(document.getElementById('outputText')||{value:''}).value||''; if(!text){ showError('EXPORT_ERROR','Nothing to download. Run first.'); return; } var geomEl=document.querySelector('input[name="exportGeom"]:checked'); var geom=(geomEl?geomEl.value:'buffer'); var filename='export_'+geom+'.'+ext; var blob=new Blob([text],{type:mime}); var url=URL.createObjectURL(blob); var a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); }
+    function downloadCurrent(){ var fmtEl=document.querySelector('input[name="exportFmt"]:checked'); var fmt=fmtEl?fmtEl.value:'wkt'; if(fmt==='shp'){ return downloadShapefile(); } var mime='text/plain', ext='txt'; if(fmt==='wkt'){ mime='text/plain'; ext='wkt'; } if(fmt==='geojson'){ mime='application/geo+json'; ext='geojson'; } if(fmt==='kml'){ mime='application/vnd.google-earth.kml+xml'; ext='kml'; } var text=document.getElementById('outputText').value||''; if(!text){ showError('EXPORT_ERROR','Nothing to download. Run first.'); return; } var geomEl=document.querySelector('input[name="exportGeom"]:checked'); var geom=(geomEl?geomEl.value:'buffer'); var filename='export_'+geom+'.'+ext; var blob=new Blob([text],{type:mime}); var url=URL.createObjectURL(blob); var a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); }
 
-    // ---------- Clear + mode switching ----------
-    function clearMapLayers(){ if(state.routeLayer){ state.map.removeLayer(state.routeLayer); state.routeLayer=null; } if(state.bufferLayer){ state.map.removeLayer(state.bufferLayer); state.bufferLayer=null; } if(state.regionLayer){ state.map.removeLayer(state.regionLayer); state.regionLayer=null; } clearMarkers(); state.lastPoints=null; state.lastRoute=null; state.lastBuffer=null; state.regionFeature=null; updateGeomChoices(); updateOutputText(); }
-    function clearUIEditors(){ var list=document.getElementById('wpList'); if(list) list.innerHTML=''; var out=document.getElementById('outputText'); if(out) out.value=''; hideSuggest(); var regInput=document.getElementById('regionName'); if(regInput) regInput.value=''; var urlInput=document.getElementById('gmapsUrl'); if(urlInput) urlInput.value=''; }
+    function downloadShapefile(){ try{ if(typeof shpwrite==='undefined'){ showError('EXPORT_ERROR','Shapefile support not loaded.'); return; } var feat=pickExportGeometry(); var fc={ type:'FeatureCollection', features:[feat] }; var gtype=feat && feat.geometry ? feat.geometry.type : 'geometry'; var layerName='export_'+gtype.toLowerCase(); var zip=shpwrite.zip(fc, { folder:'shapefile', types:{} }); var blob= zip instanceof Blob ? zip : new Blob([zip],{type:'application/zip'}); var a=document.createElement('a'); var url=URL.createObjectURL(blob); a.href=url; a.download=layerName+'.zip'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); } catch(e){ console.error(e); showError('EXPORT_ERROR', e.message||String(e)); } }
 
-    async function handleParse(){ clearError(); setLoading(true); state.fallbackQueue=[]; try{ var url=(document.getElementById('gmapsUrl')||{value:''}).value.trim(); if(!url) throw new Error('Please paste a Google Maps directions URL.'); if(/maps\.app\.goo\.gl|goo\.gl\/maps/.test(url)) url=await resolveShortUrl(url); state.fallbackQueue=extractLatLngPairsFromUrl(url); var parsed=parseGMapsUrl(url); if(!parsed||!parsed.points||parsed.points.length<2){ showError('INVALID_URL','Could not parse at least 2 stops from the URL.'); return; } renderWaypointList(parsed.points); setMode('manual'); clearMarkers(); } catch(e){ console.error(e); showError('PARSE_ERROR', e.message||String(e)); } finally{ setLoading(false); } }
+    // -------- Actions --------
+    async function handleParse(){ clearError(); setLoading(true); state.fallbackQueue=[]; try{ var url=(document.getElementById('gmapsUrl').value||'').trim(); if(!url) throw new Error('Please paste a Google Maps directions URL.'); if(/maps\.app\.goo\.gl|goo\.gl\/maps/.test(url)) url=await resolveShortUrl(url); state.fallbackQueue=extractLatLngPairsFromUrl(url); var parsed=parseGMapsUrl(url); if(!parsed||!parsed.points||parsed.points.length<2){ showError('INVALID_URL','Could not parse at least 2 stops from the URL.'); return; } renderWaypointList(parsed.points); setMode('manual'); // Geocode parsed points to show pins (no routing yet)
+      var pointsLL=[]; for(var i=0;i<parsed.points.length;i++){ try{ pointsLL.push(await geocodeIfNeeded(parsed.points[i])); }catch(e){ /* skip */ } } if(pointsLL.length){ state.lastPoints=pointsLL; placeMarkers(pointsLL); }
+    } catch(e){ console.error(e); showError('PARSE_ERROR', e.message||String(e)); } finally{ setLoading(false); } }
 
-    async function handleRun(){ clearError(); setLoading(true); var out=document.getElementById('outputText'); if(out) out.value=''; try{ var radius=getBufferRadius(); var adv=getAdvancedSettings(); if(state.mode==='regions'){ if(!state.regionFeature) throw new Error('No region polygon set. Search a region or draw one.'); var regionBuf=bufferPolygon(state.regionFeature, radius, adv); render(null, regionBuf, regionBuf); } else { var values=[]; if(state.mode==='url'){ values=getWaypointValues(); if(values.length<2){ var url=(document.getElementById('gmapsUrl')||{value:''}).value.trim(); if(!url) throw new Error('Paste a URL or switch to Manual mode to enter stops.'); if(/maps\.app\.goo\.gl|goo\.gl\/maps/.test(url)) url=await resolveShortUrl(url); state.fallbackQueue=extractLatLngPairsFromUrl(url); var parsed=parseGMapsUrl(url); if(!parsed||!parsed.points||parsed.points.length<2) throw new Error('Could not parse at least 2 stops from the URL.'); renderWaypointList(parsed.points); values=parsed.points; } } else { values=getWaypointValues(); } if(values.length<2) throw new Error('Add at least origin and destination'); if(values.length>state.maxStops) throw new Error('Maximum '+state.maxStops+' stops supported'); var fbq=state.fallbackQueue.slice(); var pointsLL=[]; for(var i=0;i<values.length;i++){ var seg=values[i]; try{ pointsLL.push(await geocodeIfNeeded(seg)); }catch(e){ if(fbq.length) pointsLL.push(fbq.shift()); else throw e; } } state.lastPoints=pointsLL; placeMarkers(pointsLL); var lineGeom=await fetchRouteForPoints(pointsLL); var bufferFeature=bufferLine(lineGeom, radius, adv); render(lineGeom, bufferFeature, null); } } catch(e){ console.error(e); showError('PROCESSING_ERROR', e.message||String(e)); } finally{ setLoading(false); } }
+    async function handleRun(){ clearError(); setLoading(true); document.getElementById('outputText').value=''; try{ var radius=parseInt(document.getElementById('bufferRadius').value,10)||25; var adv=getAdvancedSettings(); if(state.mode==='regions'){ if(!state.regionFeature) throw new Error('No region polygon set. Search a region or draw one.'); var regionBuf=bufferPolygon(state.regionFeature, radius, adv); render(null, regionBuf, regionBuf); } else { var values=[]; if(state.mode==='url'){ values=getWaypointValues(); if(values.length<2){ var url=(document.getElementById('gmapsUrl').value||'').trim(); if(!url) throw new Error('Paste a URL or switch to Manual mode to enter stops.'); if(/maps\.app\.goo\.gl|goo\.gl\/maps/.test(url)) url=await resolveShortUrl(url); state.fallbackQueue=extractLatLngPairsFromUrl(url); var parsed=parseGMapsUrl(url); if(!parsed||!parsed.points||parsed.points.length<2) throw new Error('Could not parse at least 2 stops from the URL.'); renderWaypointList(parsed.points); values=parsed.points; } } else { values=getWaypointValues(); } if(values.length<2) throw new Error('Add at least origin and destination'); if(values.length>state.maxStops) throw new Error('Maximum '+state.maxStops+' stops supported'); var fbq=state.fallbackQueue.slice(); var pointsLL=[]; for(var i=0;i<values.length;i++){ var seg=values[i]; try{ pointsLL.push(await geocodeIfNeeded(seg)); } catch(e){ if(fbq.length) pointsLL.push(fbq.shift()); else throw e; } } state.lastPoints=pointsLL; placeMarkers(pointsLL); var lineGeom=await fetchRouteForPoints(pointsLL); var bufferFeature=bufferLine(lineGeom, radius, adv); render(lineGeom, bufferFeature, null); } } catch(e){ console.error(e); showError('PROCESSING_ERROR', e.message||String(e)); } finally{ setLoading(false); } }
 
-    function setMode(mode){ clearMapLayers(); clearUIEditors(); state.mode=mode; var btnUrl=document.getElementById('modeUrl'); var btnManual=document.getElementById('modeManual'); var btnRegions=document.getElementById('modeRegions'); var urlSection=document.getElementById('urlSection'); var manualSection=document.getElementById('manualSection'); var regionsSection=document.getElementById('regionsSection'); if(btnUrl) btnUrl.classList.remove('active'); if(btnManual) btnManual.classList.remove('active'); if(btnRegions) btnRegions.classList.remove('active'); if(btnUrl) btnUrl.setAttribute('aria-selected','false'); if(btnManual) btnManual.setAttribute('aria-selected','false'); if(btnRegions) btnRegions.setAttribute('aria-selected','false'); if(urlSection) urlSection.style.display='none'; if(manualSection) manualSection.style.display='none'; if(regionsSection) regionsSection.style.display='none'; if(mode==='url'){ if(btnUrl) btnUrl.classList.add('active'); if(btnUrl) btnUrl.setAttribute('aria-selected','true'); if(urlSection) urlSection.style.display='block'; } else if(mode==='manual'){ if(btnManual) btnManual.classList.add('active'); if(btnManual) btnManual.setAttribute('aria-selected','true'); if(manualSection) manualSection.style.display='block'; } else { if(btnRegions) btnRegions.classList.add('active'); if(btnRegions) btnRegions.setAttribute('aria-selected','true'); if(regionsSection) regionsSection.style.display='block'; } setLoading(false); }
+    function setMode(mode){ if(mode===state.mode) return; state.mode=mode; var btnUrl=document.getElementById('modeUrl'); var btnManual=document.getElementById('modeManual'); var btnRegions=document.getElementById('modeRegions'); var urlSection=document.getElementById('urlSection'); var manualSection=document.getElementById('manualSection'); var regionsSection=document.getElementById('regionsSection'); btnUrl.classList.remove('active'); btnManual.classList.remove('active'); btnRegions.classList.remove('active'); btnUrl.setAttribute('aria-selected','false'); btnManual.setAttribute('aria-selected','false'); btnRegions.setAttribute('aria-selected','false'); urlSection.style.display='none'; manualSection.style.display='none'; regionsSection.style.display='none'; if(mode==='url'){ btnUrl.classList.add('active'); btnUrl.setAttribute('aria-selected','true'); urlSection.style.display='block'; } else if(mode==='manual'){ btnManual.classList.add('active'); btnManual.setAttribute('aria-selected','true'); manualSection.style.display='block'; } else { btnRegions.classList.add('active'); btnRegions.setAttribute('aria-selected','true'); regionsSection.style.display='block'; } // Clear map + output when switching workflows
+      clearMapGeoms(); }
 
-    // ---------- Wire up ----------
-    window.addEventListener('DOMContentLoaded', function(){
-      initMap();
-      // Theme radios (default dark already applied)
-      var themeRadios=document.querySelectorAll('input[name="mapTheme"]'); Array.prototype.forEach.call(themeRadios, function(r){ r.addEventListener('change', function(){ setMapTheme(this.value); }); });
-
-      // Mode toggles
-      var el; (el=document.getElementById('modeUrl'))&&el.addEventListener('click', function(){ setMode('url'); });
-      (el=document.getElementById('modeManual'))&&el.addEventListener('click', function(){ setMode('manual'); });
-      (el=document.getElementById('modeRegions'))&&el.addEventListener('click', function(){ setMode('regions'); });
-
-      // URL
-      (el=document.getElementById('parseBtn'))&&el.addEventListener('click', handleParse);
-
-      // Manual editor
-      (el=document.getElementById('addStopBtn'))&&el.addEventListener('click', function(){ addWaypointRow(''); });
-      (el=document.getElementById('clearStopsBtn'))&&el.addEventListener('click', function(){ clearMapLayers(); var l=document.getElementById('wpList'); if(l) l.innerHTML=''; });
-
-      // Regions
-      (el=document.getElementById('findRegionBtn'))&&el.addEventListener('click', async function(){ clearError(); setLoading(true); try{ var name=(document.getElementById('regionName')||{value:''}).value.trim(); if(!name) throw new Error('Enter a region name or ZIP'); var feat=await findRegionByName(name); setRegionFeature(feat); } catch(e){ console.error(e); showError('REGION_ERROR', e.message||String(e)); } finally{ setLoading(false); } });
-      (el=document.getElementById('drawRegionBtn'))&&el.addEventListener('click', function(){ if(state.mode!=='regions') setMode('regions'); try{ new L.Draw.Polygon(state.map).enable(); } catch(e){ console.error(e); showError('DRAW_ERROR','Could not start drawing'); } });
-      (el=document.getElementById('clearRegionBtn'))&&el.addEventListener('click', function(){ clearMapLayers(); });
-
-      // Run + Output + Download
-      (el=document.getElementById('runBtn'))&&el.addEventListener('click', handleRun);
-      var fmt=document.querySelectorAll('input[name="exportFmt"]'); Array.prototype.forEach.call(fmt, function(r){ r.addEventListener('change', updateOutputText); });
-      (el=document.getElementById('downloadBtn'))&&el.addEventListener('click', downloadCurrent);
-
-      // Ensure panels reflect default & type-ahead wired
-      setMode('manual');
-      // Regions type-ahead listeners
-      var input=document.getElementById('regionName'); if(input){ input.addEventListener('input', scheduleSuggest); input.addEventListener('focus', scheduleSuggest); input.addEventListener('keydown', function(e){ var items=state.suggestItems||[]; if(!items.length) return; var code=e.key||e.keyCode; if(code==='ArrowDown' || code===40){ e.preventDefault(); state.suggestIdx=(state.suggestIdx+1)%items.length; highlightSuggest(); } else if(code==='ArrowUp' || code===38){ e.preventDefault(); state.suggestIdx=(state.suggestIdx-1+items.length)%items.length; highlightSuggest(); } else if(code==='Enter' || code===13){ if(state.suggestIdx>=0){ e.preventDefault(); chooseSuggest(state.suggestIdx); } } else if(code==='Escape' || code===27){ hideSuggest(); } }); input.addEventListener('blur', function(){ setTimeout(hideSuggest, 150); }); }
-      function highlightSuggest(){ var box=document.getElementById('regionSuggest'); if(!box) return; var nodes=box.querySelectorAll('.item'); for(var i=0;i<nodes.length;i++){ if(i===state.suggestIdx) nodes[i].classList.add('active'); else nodes[i].classList.remove('active'); } }
-
-      updateGeomChoices();
-    });
+    // -------- Wire up --------
+    window.addEventListener('DOMContentLoaded', function(){ initMap(); attachRegionTypeahead(); document.getElementById('modeUrl').addEventListener('click', function(){ setMode('url'); }); document.getElementById('modeManual').addEventListener('click', function(){ setMode('manual'); }); document.getElementById('modeRegions').addEventListener('click', function(){ setMode('regions'); }); document.getElementById('parseBtn').addEventListener('click', handleParse); document.getElementById('addStopBtn').addEventListener('click', function(){ addWaypointRow(''); }); document.getElementById('clearStopsBtn').addEventListener('click', function(){ var l=document.getElementById('wpList'); l.innerHTML=''; updateIndices(); clearMapGeoms(); }); document.getElementById('findRegionBtn').addEventListener('click', async function(){ clearError(); setLoading(true); try{ var name=(document.getElementById('regionName').value||'').trim(); if(!name) throw new Error('Enter a region name or ZIP'); var feat=await findRegionByName(name); setRegionFeature(feat); } catch(e){ console.error(e); showError('REGION_ERROR', e.message||String(e)); } finally{ setLoading(false); } }); document.getElementById('drawRegionBtn').addEventListener('click', function(){ if(state.mode!=='regions') setMode('regions'); try{ new L.Draw.Polygon(state.map).enable(); }catch(e){ console.error(e); showError('DRAW_ERROR','Could not start drawing'); } }); document.getElementById('clearRegionBtn').addEventListener('click', function(){ clearRegion(); clearMapGeoms(); }); document.getElementById('runBtn').addEventListener('click', handleRun); Array.prototype.forEach.call(document.querySelectorAll('input[name="exportFmt"]'), function(r){ r.addEventListener('change', updateOutputText); }); document.getElementById('downloadBtn').addEventListener('click', downloadCurrent); // No default empty rows anymore
+      updateGeomChoices(); });
   </script>
 </body>
 </html>
