@@ -1,440 +1,331 @@
+
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Zone Widget</title>
-  <!-- Leaflet core -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-  <!-- Leaflet.draw for polygon drawing in Regions mode -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
-  <style>
-    /* ---------- THEME (UI is always dark) ---------- */
-    :root {
-      --bg:#0f172a; --panel:#111827; --text:#e5e7eb; --muted:#9ca3af;
-      --accent:#22c55e; --accent-2:#3b82f6; --danger:#ef4444; --danger-border:#dc2626;
-      --border:#1f2937; --chip:#0b1220; --highlight:#93c5fd; /* lighter highlight */
-      --shadow: 0 8px 24px rgba(0,0,0,.35);
-    }
-
-    * { box-sizing:border-box }
-    body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Cantarell,Noto Sans,Helvetica,Arial; background:var(--bg); color:var(--text) }
-    header { padding:12px 16px; border-bottom:1px solid var(--border); background:var(--panel); position:sticky; top:0; z-index:10; display:flex; align-items:center; justify-content:space-between }
-    header h1 { margin:0; font-size:18px; font-weight:800; letter-spacing:.25px }
-    .theme-toggle { display:flex; align-items:center; gap:8px }
-    .toggle { border:1px solid var(--border); background:transparent; color:var(--text); padding:6px 10px; border-radius:999px; cursor:pointer }
-    .toggle:hover { background:var(--chip) }
-
-    main { display:grid; grid-template-columns:520px 1fr; gap:16px; height:calc(100vh - 54px) }
-    @media (max-width:1100px){ main{ grid-template-columns:1fr; height:auto } #map{ height:60vh } }
-    .panel { padding:16px; border-right:1px solid var(--border); overflow:auto; background:var(--panel) }
-    .section { margin-bottom:16px }
-    .section-title { font-size:14px; font-weight:800; margin:18px 0 8px 0 }
-    .sub-title { font-size:13px; font-weight:700; margin:10px 0 6px 0; color:var(--text) }
-    .subtle { font-size:12px; font-weight:700; margin:8px 0 6px 0; color:var(--muted) }
-
-    label { display:block; font-size:12px; color:var(--muted); margin-bottom:6px }
-    input[type=text], select, input[type=number] { width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--border); background:var(--chip); color:var(--text) }
-    button { padding:8px 12px; border-radius:8px; border:1px solid transparent; background:var(--accent); color:#052e16; font-weight:700; cursor:pointer }
-    button.secondary { background:#1f2937; color:var(--text); border-color:#2b3747 }
-    button.blue { background:var(--accent-2); color:#031633; border-color:#1d4ed8 }
-    button.ghost { background:transparent; border:1px solid var(--border); color:var(--muted) }
-    button.danger { background:var(--danger); color:#fff; border-color:var(--danger-border) }
-    button:hover, .seg button:hover, .ghost:hover { filter:brightness(1.02); box-shadow:var(--shadow) }
-    button:disabled { opacity:.6; cursor:not-allowed; box-shadow:none }
-    .seg button.active, .mode-toggle .active, .regions-toggle .active, .toggle.active, .toggle:focus { outline:2px solid var(--highlight); background:rgba(147,197,253,.12); color:var(--text) }
-
-    #loading { display:none; font-size:12px; color:var(--muted); margin-top:6px }
-    #map { height:calc(100vh - 54px) }
-    textarea { width:100%; min-height:160px; padding:10px 12px; border-radius:8px; border:1px solid var(--border); background:var(--chip); color:var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace }
-    .error { display:none; margin-top:8px; padding:10px 12px; border-radius:8px; background:rgba(239,68,68,.1); border:1px solid rgba(239,68,68,.35); color:#b91c1c; font-size:13px; white-space:pre-wrap }
-    .legend { font-size:12px; color:var(--muted); margin-top:8px }
-    .small { font-size:12px }
-
-    .mode-toggle, .regions-toggle { display:inline-flex; background:var(--chip); border:1px solid var(--border); border-radius:10px; overflow:hidden }
-    .mode-toggle button, .regions-toggle button { border:none; background:transparent; color:var(--muted); padding:8px 12px; font-weight:600 }
-
-    /* Waypoints, one line */
-    .wp-header { display:flex; justify-content:space-between; align-items:center; margin:8px 0 }
-    .wp-list { display:flex; flex-direction:column; gap:8px }
-    .wp-item { display:grid; grid-template-columns:28px 1fr 28px 28px 28px; gap:6px; align-items:center; padding:6px; border:1px solid var(--border); border-radius:8px; background:var(--chip); position:relative }
-    .wp-item .index { width:28px; height:28px; display:flex; align-items:center; justify-content:center; font-size:12px; color:#cbd5e1; background:#111827; border-radius:6px }
-    .wp-item button { padding:4px 0; height:30px }
-
-    /* Typeahead: attach to a relative wrapper below the input */
-    .ta-wrap { position:relative }
-    .ta { position:absolute; left:0; right:0; top:calc(100% + 4px); background:var(--panel); border:1px solid var(--border); border-radius:8px; z-index:20; max-height:240px; overflow:auto; box-shadow:var(--shadow) }
-    .ta-item { padding:8px 10px; font-size:13px; color:var(--text); cursor:pointer }
-    .ta-item:hover, .ta-item.active { background:rgba(147,197,253,.25) }
-
-    /* Marker numbers */
-    .num-marker { display:flex; align-items:center; justify-content:center; font-weight:700; color:#fff; background:#0ea5e9; border:2px solid #fff; border-radius:50%; width:28px; height:28px; box-shadow:0 1px 6px rgba(0,0,0,.35) }
-    .num-marker.origin { background:#22c55e }
-    .num-marker.dest { background:#ef4444 }
-    .leaflet-tooltip.marker-label { background:var(--panel); border:1px solid var(--border); color:var(--text); padding:2px 6px; border-radius:6px; font-size:11px }
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Zone Widget</title>
+<link rel="preconnect" href="https://unpkg.com" crossorigin>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"/>
+<style>
+:root{ --bg:#0c0f14; --panel:#121722; --text:#e6e9ef; --muted:#aab0bb; --accent:#5ac8fa; --danger:#ff4d4f; --border:#1f2633; }
+*{box-sizing:border-box}
+html,body{height:100%;}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+.app{display:grid;grid-template-columns:360px 1fr;height:100vh}
+.sidebar{background:var(--panel);border-right:1px solid var(--border);display:flex;flex-direction:column}
+.header{padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.header h1{font-size:16px;margin:0}
+.theme{margin-left:auto;display:flex;gap:8px;align-items:center}
+.theme label{font-size:12px;color:var(--muted)}
+.main{position:relative}
+#map{position:absolute;inset:0}
+.section{padding:12px 16px;border-bottom:1px solid var(--border)}
+.label{display:block;font-weight:600;margin-bottom:6px}
+.small{font-size:12px;color:var(--muted)}
+.mode-row{display:flex;gap:6px}
+.mode-row label{display:block;padding:8px 10px;background:#0f1522;border:1px solid var(--border);border-radius:6px;text-align:center;cursor:pointer;color:var(--muted)}
+.mode-row input{display:none}
+.mode-row input:checked+label{background:#141b2b;color:var(--text);border-color:#2a3550}
+#workflowPanels .panel{display:none;margin-top:10px}
+#workflowPanels .panel.active{display:block}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+input[type=text],input[type=number],select{background:#0b111b;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 10px}
+input[type=number]{width:90px}
+button{background:#1b2a44;color:var(--text);border:1px solid #294166;border-radius:6px;padding:8px 12px;cursor:pointer}
+button.primary{background:#214d7a;border-color:#2c6fb0}
+button:disabled{opacity:.5;cursor:not-allowed}
+button.clear{background:#2a0f14;border-color:#4a1e26;color:#ffb3b3}
+.code{background:#0a0f19;border:1px solid var(--border);border-radius:6px;padding:8px;color:#cde;white-space:pre-wrap;max-height:220px;overflow:auto}
+.details{background:#0f1522;border:1px solid var(--border);border-radius:8px;padding:10px}
+.manual-header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.manual-note{font-weight:700}
+.buffer-row{display:flex;align-items:center;gap:8px;flex-wrap:nowrap}
+.footer{padding:10px 16px;color:var(--muted);font-size:12px}
+.leaflet-control-container .leaflet-top.leaflet-left{margin-top:60px}
+</style>
 </head>
 <body>
-  <header>
-    <h1>Zone Widget</h1>
-    <div class="theme-toggle">
-      <span class="small" id="mapThemeLabel">Map: Dark</span>
-      <button id="mapThemeBtn" class="toggle" title="Toggle map theme">🌙</button>
-    </div>
-  </header>
-
-  <main>
-    <div class="panel">
-      <!-- Input Mode -->
-      <div class="section-title">Input Mode</div>
-      <div class="sub-title">Choose workflow</div>
-      <div class="section">
-        <div class="mode-toggle" role="tablist" aria-label="Input Mode">
-          <button id="modeUrl" class="active" role="tab" aria-selected="true">Google Maps URL</button>
-          <button id="modeManual" role="tab" aria-selected="false">Create Route Manually</button>
-          <button id="modeRegions" role="tab" aria-selected="false">Regions</button>
-        </div>
+<div class="app">
+  <aside class="sidebar">
+    <div class="header">
+      <h1>Zone Widget</h1>
+      <div class="theme">
+        <label>Map</label>
+        <select id="mapTheme"><option value="dark" selected>Dark</option><option value="light">Light</option><option value="hc">High Contrast (B/W)</option></select>
       </div>
-
-      <!-- Workflow content -->
-      <div class="subtle">Workflow content</div>
-      <!-- URL section -->
-      <div id="urlSection" class="section">
-        <label for="gmapsUrl">Google Maps Directions URL</label>
-        <div class="row">
-          <input id="gmapsUrl" type="text" placeholder="https://www.google.com/maps/dir/Start/WP1/.../End or ?api=1&origin=...&destination=...&waypoints=..." />
-          <div style="display:flex; gap:8px; align-items:end; justify-content:flex-end;"><button id="parseBtn" class="secondary">Parse URL</button></div>
-        </div>
-        <div class="legend">Short links supported; if a <code>maps.app.goo.gl</code> link fails due to CORS, open it once and paste the expanded URL.</div>
-      </div>
-
-      <!-- Manual waypoint section -->
-      <div id="manualSection" class="section" style="display:none;">
-        <div class="wp-header">
-          <div><span class="small" style="font-weight:700">Waypoints</span> (max 10)</div>
-          <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-            <button id="addStopBtn" class="ghost">+ Add Stop</button>
-            <button id="clearStopsBtn" class="danger">Clear</button>
-            <span class="legend">(Clicks on the map automatically add the next stop)</span>
-          </div>
-        </div>
-        <div id="wpList" class="wp-list"></div>
-        <div class="legend">Order matters: top is origin; bottom is destination. Drag pins on the map to adjust locations.</div>
-      </div>
-
-      <!-- Regions section -->
-      <div id="regionsSection" class="section" style="display:none;">
-        <!-- Toggle between Find vs Draw -->
-        <div class="regions-toggle" role="tablist" aria-label="Region Input Mode" style="margin-bottom:10px;">
-          <button id="btnRegionFind" class="active" role="tab" aria-selected="true">Find Region</button>
-          <button id="btnRegionDraw" role="tab" aria-selected="false">Draw Region</button>
-        </div>
-        <!-- Find Region content (full width input with typeahead below) -->
-        <div id="regionFindWrap">
-          <label for="regionName">Find Region by Name or ZIP (US)</label>
-          <div class="ta-wrap">
-            <input id="regionName" type="text" placeholder="e.g., Berkeley, CA or 94618" />
-            <div id="regionTa" class="ta" style="display:none;"></div>
-          </div>
-          <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:8px;">
-            <button id="findRegionBtn" class="secondary">Find Region</button>
-            <button id="clearRegionBtn" class="danger">Clear Region</button>
-          </div>
-        </div>
-        <!-- Draw Region content (instructions only; drawing starts when toggled) -->
-        <div id="regionDrawWrap" style="display:none;">
-          <div class="legend">Drawing mode is active. Click on the map to add vertices; click the first point to finish. Use <b>Clear Region</b> to remove.</div>
-          <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:8px;">
-            <button id="clearRegionBtn2" class="danger">Clear Region</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Buffer Radius -->
-      <div class="section-title">Buffer Radius</div>
-      <div class="section row">
-        <div>
-          <label for="bufferRadius">Select buffer radius</label>
-          <select id="bufferRadius"><option value="10">10 m</option><option value="25" selected>25 m</option><option value="50">50 m</option><option value="100">100 m</option></select>
-        </div>
-        <div style="display:flex; gap:8px; align-items:end; justify-content:flex-end;"><button id="runBtn" class="blue">Run (Route/Region) & Buffer</button></div>
-      </div>
-
-      <!-- Advanced buffering -->
-      <div class="sub-title">Advanced buffering</div>
-      <div class="section">
-        <details id="advPanel" class="adv">
-          <summary>Advanced buffering</summary>
-          <div class="row-3" style="margin-top:10px;">
-            <div>
-              <label for="advSteps">Arc smoothness (steps)</label>
-              <input id="advSteps" type="number" min="1" max="64" step="1" value="6" />
-            </div>
-            <div>
-              <label for="advSimplify">Simplify tolerance (meters)</label>
-              <input id="advSimplify" type="number" min="0" step="1" value="7" />
-            </div>
-            <div>
-              <label for="advPrecision">Coordinate precision (decimals)</label>
-              <input id="advPrecision" type="number" min="0" max="10" step="1" value="5" />
-            </div>
-          </div>
-          <div class="legend">Higher arc smoothness creates smoother round corners but increases vertices. Simplify removes small wiggles using the given meter tolerance (applied after buffering). Precision rounds output coordinates.</div>
-        </details>
-      </div>
-
-      <div id="loading">⏳ Working... Please wait.</div>
-      <div id="errorBox" class="error"></div>
-      <div style="height:1px; background:var(--border); margin:10px 0"></div>
-
-      <!-- Output -->
-      <div class="section-title">Output</div>
-      <div class="sub-title">Geometry</div>
-      <div class="section">
-        <div id="geomChoices" class="export-row" style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;"></div>
-      </div>
-      <div class="sub-title">Format</div>
-      <div class="section">
-        <div class="export-row" style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
-          <label><input type="radio" name="exportFmt" value="wkt" checked> WKT</label>
-          <label><input type="radio" name="exportFmt" value="geojson"> GeoJSON</label>
-          <label><input type="radio" name="exportFmt" value="kml"> KML</label>
-          <label><input type="radio" name="exportFmt" value="shp"> Shapefile (.zip)</label>
-        </div>
-      </div>
-      <div class="sub-title">Preview</div>
-      <div class="section">
-        <label for="outputText" class="small">Preview (read-only)</label>
-        <textarea id="outputText" readonly placeholder="Output will appear here after routing/buffering."></textarea>
-      </div>
-      <div class="sub-title">Download</div>
-      <div class="section" style="display:flex; gap:8px;">
-        <button id="downloadBtn" class="secondary">Download</button>
-      </div>
-
-      <div class="legend">• Switching between workflows (URL / Manual / Regions) clears the map layers. • Manual mode: click to add stops, drag pins to adjust. • Regions: search by name/ZIP or draw. • Output: choose a geometry & format to preview and download.</div>
     </div>
 
-    <div id="map"></div>
-  </main>
+    <div class="section">
+      <div class="label">Input Mode</div>
+      <div class="mode-row" id="modeRow">
+        <input type="radio" id="mode-url" name="workflow" value="url"><label for="mode-url">Google Maps URL</label>
+        <input type="radio" id="mode-manual" name="workflow" value="manual" checked><label for="mode-manual">Create Route Manually</label>
+        <input type="radio" id="mode-regions" name="workflow" value="regions"><label for="mode-regions">Regions</label>
+      </div>
+    </div>
 
-  <!-- Scripts -->
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
-  <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
-  <script src="https://unpkg.com/wellknown@0.5.0/wellknown.js"></script>
-  <script>
-    // -------- Map base layers (UI stays dark; toggle affects map tiles only) --------
-    var baseLight = null, baseDark = null;
+    <div class="section" id="workflowPanels">
+      <div id="panel-url" class="panel">
+        <div class="label">Google Maps Directions URL</div>
+        <div class="row"><input id="urlInput" type="text" placeholder="Paste a Google Maps directions URL..." style="flex:1"><button id="parseUrlBtn">Parse URL</button></div>
+        <div class="small">Short links supported; if a link fails due to CORS, open it once and paste the expanded URL.</div>
+        <hr>
+        <div class="small">Order matters: top is origin; bottom is destination. Drag pins on the map to adjust locations.</div>
+      </div>
 
-    // -------- State --------
-    var state = { map:null, baseLayer:null, mapTheme:'dark', routeLayer:null, bufferLayer:null, regionLayer:null, markers:[], lastPoints:null, lastRoute:null, lastBuffer:null, regionFeature:null, fallbackQueue:[], maxStops:10, mode:'url', regionMode:'find' };
+      <div id="panel-manual" class="panel active">
+        <div class="manual-header"><div class="manual-note">Clicks on the map automatically add the next stop.</div><button id="clearManualBtn" class="clear">Clear</button></div>
+        <div class="small">Max 10 stops. Drag pins on the map to adjust locations.</div>
+      </div>
 
-    // -------- UI helpers --------
-    function setLoading(x){ document.getElementById('loading').style.display = x ? 'block' : 'none'; var p=document.getElementById('parseBtn'); if(p) p.disabled=x||state.mode!=='url'; document.getElementById('runBtn').disabled=x; }
-    function showError(c,m,e){ var b=document.getElementById('errorBox'); b.style.display='block'; b.textContent='['+c+'] '+m+(e?'\n'+e:''); }
-    function clearError(){ var b=document.getElementById('errorBox'); b.style.display='none'; b.textContent=''; }
+      <div id="panel-regions" class="panel">
+        <div class="row"><label><input type="radio" name="regionMode" value="find" checked> Find Region</label><label><input type="radio" name="regionMode" value="draw"> Draw Region</label></div>
+        <div id="region-find">
+          <label class="label">Find Region by Name or ZIP (US)</label>
+          <div class="row"><input id="regionQuery" list="region-suggest" type="text" placeholder="e.g., San Francisco, CA or 94103" style="flex:1"><datalist id="region-suggest"></datalist><button id="findRegionBtn">Find Region</button><button id="clearRegionBtn" class="clear">Clear Region</button></div>
+          <div class="small">Tip: Start typing to see suggestions. Select a suggestion or press Enter to search.</div>
+        </div>
+        <div id="region-draw" style="display:none">
+          <div class="small"><b>Drawing mode</b> is active. Click on the map to add vertices; click the first point to finish. Use <b>Clear Region</b> to remove.</div>
+          <div class="row" style="margin-top:6px"><button id="clearDrawnBtn" class="clear">Clear Region</button></div>
+        </div>
+      </div>
+    </div>
 
-    // -------- Map init & resets --------
-    function initMap(){
-      state.map=L.map('map',{zoomControl:true}).setView([37.7749,-122.4194],12);
-      // CARTO light & dark basemaps (no key)
-      baseLight = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OpenStreetMap contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-        subdomains: 'abcd', maxZoom: 20
-      });
-      baseDark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OpenStreetMap contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-        subdomains: 'abcd', maxZoom: 20
-      });
-      // Default map theme is dark
-      try { var saved = localStorage.getItem('zw-map-theme'); if(saved==='light') state.mapTheme='light'; } catch(e){}
-      applyMapTheme(state.mapTheme);
+    <div class="section">
+      <div class="label">Buffer Radius</div>
+      <div class="buffer-row"><label class="label" for="bufferFeet" style="margin:0">Buffer (ft)</label><input id="bufferFeet" type="number" min="0" step="1" value="100"><button id="runBufferBtn" class="primary">Buffer</button></div>
+      <details class="details" id="advBufferDetails"><summary>Advanced buffering</summary>
+        <div class="row" style="margin-top:8px"><label class="label" for="arcSteps">Arc smoothness (steps)</label><input id="arcSteps" type="number" min="4" step="1" value="5"></div>
+        <div class="row"><label class="label" for="simplifyTol">Simplify tolerance (meters)</label><input id="simplifyTol" type="number" min="0" step="0.5" value="10"></div>
+        <div class="small">Higher arc smoothness creates smoother corners but increases vertices. Simplify removes small wiggles using the given meter tolerance (applied after buffering). Coordinates are rounded to <b>4 decimals</b>.</div>
+      </details>
+      <div id="working" class="small" style="display:none;margin-top:6px">⏳ Working... Please wait.</div>
+    </div>
 
-      // Click-to-add (manual only)
-      state.map.on('click', function(evt){ if(state.mode!=='manual') return; var lat=evt.latlng.lat, lng=evt.latlng.lng; addWaypointRow(lat.toFixed(6)+','+lng.toFixed(6)); if(!Array.isArray(state.lastPoints)) state.lastPoints=[]; state.lastPoints.push({lat:lat,lng:lng}); placeMarkers(state.lastPoints); if(state.lastPoints.length>=2){ rerouteFromLastPoints(); } });
-      // Draw (regions)
-      var drawCtl=new L.Control.Draw({ position:'topright', draw:{ polygon:true, polyline:false, rectangle:false, circle:false, marker:false, circlemarker:false }, edit:false });
-      state.map.addControl(drawCtl);
-      state.map.on(L.Draw.Event.CREATED, function(e){ if(state.mode!=='regions' || state.regionMode!=='draw') return; var layer=e.layer; var feat={ type:'Feature', properties:{}, geometry: layer.toGeoJSON().geometry }; setRegionFeature(feat); });
-    }
+    <div class="section">
+      <div class="label">Output</div>
+      <div class="row"><label><input type="radio" name="fmt" value="wkt" checked> WKT</label><label><input type="radio" name="fmt" value="geojson"> GeoJSON</label><label><input type="radio" name="fmt" value="kml"> KML</label><label><input type="radio" name="fmt" value="shp"> Shapefile (.zip)</label></div>
+      <div class="label" style="margin-top:8px">Preview (read-only)</div>
+      <div id="preview" class="code" aria-live="polite"></div>
+      <div class="row" style="margin-top:8px"><button id="downloadBtn">Download</button></div>
+      <div class="small" style="margin-top:10px">• Switching between workflows (URL / Manual / Regions) clears the map layers. • Manual mode: click to add stops, drag pins to adjust. • Regions: search by name/ZIP or draw. • Output: choose a geometry & format to preview and download.</div>
+    </div>
 
-    function applyMapTheme(theme){ if(state.baseLayer){ state.map.removeLayer(state.baseLayer); state.baseLayer=null; }
-      if(theme==='light'){ state.baseLayer = baseLight; } else { state.baseLayer = baseDark; }
-      if(state.baseLayer) state.baseLayer.addTo(state.map);
-      var label = document.getElementById('mapThemeLabel'); var btn = document.getElementById('mapThemeBtn');
-      if(label) label.textContent = 'Map: ' + (theme==='light' ? 'Light' : 'Dark');
-      if(btn) btn.textContent = (theme==='light' ? '☀️' : '🌙');
-      try { localStorage.setItem('zw-map-theme', theme); } catch(e){}
-    }
+    <div class="footer">Zone Widget • v2025.10 • Hunter Irvin</div>
+  </aside>
+  <main class="main"><div id="map"></div></main>
+</div>
 
-    function clearMapGeoms(){ try{ if(state.routeLayer){ state.map.removeLayer(state.routeLayer); state.routeLayer=null; } if(state.bufferLayer){ state.map.removeLayer(state.bufferLayer); state.bufferLayer=null; } if(state.regionLayer){ state.map.removeLayer(state.regionLayer); state.regionLayer=null; } clearMarkers(); state.lastPoints=null; state.lastRoute=null; state.lastBuffer=null; state.regionFeature=null; document.getElementById('outputText').value=''; var box=document.getElementById('geomChoices'); if(box) box.innerHTML=''; }catch(e){} }
+<!-- Core libs -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin></script>
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+<script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
 
-    // -------- URL helpers --------
-    function isLatLng(t){ if(!t) return null; var c=decodeURIComponent(t).trim(); var m=c.match(/^\s*(-?\d+(?:\.\d+)?)\s*[ ,]\s*(-?\d+(?:\.\d+)?)\s*$/); if(!m) return null; var lat=parseFloat(m[1]), lng=parseFloat(m[2]); if(isFinite(lat)&&isFinite(lng)&&Math.abs(lat)<=90&&Math.abs(lng)<=180) return [lat,lng]; return null; }
-    function isUSZip(t){ return /^\d{5}(?:-\d{4})?$/.test(String(t).trim()); }
-    function extractLatLngPairsFromUrl(url){ var pairs=[]; var r=/!1d(-?\d+(?:\.\d+)?)!2d(-?\d+(?:\.\d+)?)/g; var m; while((m=r.exec(url))!==null){ var lon=parseFloat(m[1]), lat=parseFloat(m[2]); if(isFinite(lat)&&isFinite(lon)) pairs.push({lat:lat,lng:lon}); } return pairs; }
-    async function resolveShortUrl(u){ try{ var resp=await fetch(u,{redirect:'follow',method:'GET'}); return (resp&&resp.url)?resp.url:u; } catch(e){ return u; } }
-    function parseGMapsUrl(u){ try{ var url=new URL(u); if(url.searchParams.get('api')==='1'&&(url.searchParams.get('origin')||url.searchParams.get('destination'))){ var pts=[], o=url.searchParams.get('origin')||'', d=url.searchParams.get('destination')||'', w=url.searchParams.get('waypoints')||''; var push=function(s){ if(!s) return; var seg=s.replace(/^via:/i,''); var ll=isLatLng(seg); pts.push(ll||decodeURIComponent(seg).trim()); }; push(o); if(w) w.split('|').forEach(push); push(d); return {points:pts}; } var path=url.pathname; var i=path.indexOf('/maps/dir'); if(i!==-1){ var segs=path.slice(i+'/maps/dir'.length).split('/').map(function(s){return s.trim();}); var cut=segs.findIndex(function(s){return s.startsWith('@');}); if(cut>=0) segs=segs.slice(0,cut); segs=segs.filter(Boolean); var pts2=segs.slice(0,state.maxStops).map(function(s){ var dec=decodeURIComponent(s); if(dec.startsWith('loc:')){ var ll=isLatLng(dec.slice(4)); return ll||dec; } return isLatLng(dec)||dec; }); return {points:pts2}; } return null; } catch(e){ return null; } }
+<!-- Resilient loaders for optional deps (shp-write, terraformer/WKT, tokml) -->
+<script>
+async function loadScriptSequential(urls){
+  for (const url of urls){
+    try{
+      await new Promise((resolve,reject)=>{ const s=document.createElement('script'); s.src=url; s.async=true; s.crossOrigin='anonymous'; s.onload=()=>resolve(); s.onerror=()=>reject(); document.head.appendChild(s);});
+      return true;
+    }catch(e){}
+  }
+  return false;
+}
+async function ensureShpWrite(){
+  if (window.shpwrite) return true;
+  const ok = await loadScriptSequential([
+    'https://cdn.jsdelivr.net/npm/@mapbox/shp-write@0.4.3/dist/shpwrite.js',
+    'https://unpkg.com/@mapbox/shp-write@0.4.3/dist/shpwrite.js',
+    'https://cdn.jsdelivr.net/npm/@mapbox/shp-write@latest/dist/shpwrite.js',
+    'https://unpkg.com/@mapbox/shp-write@latest/dist/shpwrite.js',
+    'https://cdn.jsdelivr.net/npm/@mapbox/shp-write@0.3.2/dist/shpwrite.js',
+    'https://unpkg.com/@mapbox/shp-write@0.3.2/dist/shpwrite.js',
+    'https://cdn.jsdelivr.net/npm/@nickrsan/shp-write@0.3.7/dist/shpwrite.js',
+    'https://unpkg.com/@nickrsan/shp-write@0.3.7/dist/shpwrite.js',
+    'https://cdn.jsdelivr.net/npm/@simwrapper/shp-write@0.3.3/dist/shpwrite.js',
+    'https://unpkg.com/@simwrapper/shp-write@0.3.3/dist/shpwrite.js',
+    'https://cdn.jsdelivr.net/npm/@mapbox/shp-write@0.4.3/shpwrite.js',
+    'https://unpkg.com/@mapbox/shp-write@0.4.3/shpwrite.js'
+  ]);
+  return ok && !!window.shpwrite;
+}
+async function ensureTerraformerWKT(){
+  if (window.Terraformer && window.Terraformer.WKT) return true;
+  const ok1 = await loadScriptSequential([
+    'https://cdn.jsdelivr.net/npm/terraformer@1.0.12/terraformer.min.js',
+    'https://unpkg.com/terraformer@1.0.12/terraformer.min.js',
+    'https://cdn.jsdelivr.net/npm/terraformer@1.0.12/terraformer.js',
+    'https://unpkg.com/terraformer@1.0.12/terraformer.js'
+  ]);
+  const ok2 = await loadScriptSequential([
+    'https://cdn.jsdelivr.net/npm/terraformer-wkt-parser@1.2.1/terraformer-wkt-parser.min.js',
+    'https://unpkg.com/terraformer-wkt-parser@1.2.1/terraformer-wkt-parser.min.js',
+    'https://cdn.jsdelivr.net/npm/terraformer-wkt-parser@1.2.1/terraformer-wkt-parser.js',
+    'https://unpkg.com/terraformer-wkt-parser@1.2.1/terraformer-wkt-parser.js'
+  ]);
+  return (ok1 && ok2 && window.Terraformer && window.Terraformer.WKT);
+}
+async function ensureToKml(){
+  if (window.tokml) return true;
+  const ok = await loadScriptSequential([
+    'https://cdn.jsdelivr.net/npm/tokml@0.4.0/tokml.js',
+    'https://unpkg.com/tokml@0.4.0/tokml.js'
+  ]);
+  return ok && !!window.tokml;
+}
+</script>
 
-    // -------- Waypoint editor + typeahead --------
-    function renderWaypointList(values){ var list=document.getElementById('wpList'); if(!list) return; list.innerHTML=''; (values||[]).slice(0,state.maxStops).forEach(function(v){ addWaypointRow(v); }); updateIndices(); }
-    function addWaypointRow(value){ value=(typeof value==='undefined')?'':value; var list=document.getElementById('wpList'); if(!list||list.children.length>=state.maxStops) return; var item=document.createElement('div'); item.className='wp-item'; item.innerHTML='\
-      <div class="index">1</div>\
-      <div class="ta-wrap"><input type="text" class="wp-input" placeholder="Address, business name, or lat,lng" /></div>\
-      <button class="ghost up" title="Move up">▲</button>\
-      <button class="ghost down" title="Move down">▼</button>\
-      <button class="danger del" title="Remove">✕</button>';
-      list.appendChild(item);
-      var input=item.querySelector('.wp-input'); input.value=typeof value==='string'?value:(Array.isArray(value)?(value[0]+","+value[1]):(value||''));
-      // Typeahead attach
-      attachTypeahead(input, function(sel){ input.value=sel; });
-      item.querySelector('.del').addEventListener('click',function(){ item.remove(); updateIndices(); clearMarkers(); state.lastPoints=null; });
-      item.querySelector('.up').addEventListener('click',function(){ var prev=item.previousElementSibling; if(prev) list.insertBefore(item,prev); updateIndices(); });
-      item.querySelector('.down').addEventListener('click',function(){ var next=item.nextElementSibling; if(next) list.insertBefore(next,item); updateIndices(); });
-      updateIndices(); return item; }
-    function updateIndices(){ var list=document.getElementById('wpList'); if(!list) return; Array.prototype.slice.call(list.children).forEach(function(el,idx){ el.querySelector('.index').textContent=String(idx+1); }); }
-    function getWaypointValues(){ return Array.prototype.slice.call(document.querySelectorAll('.wp-input')).map(function(i){ return i.value.trim(); }).filter(Boolean); }
+<script>
+// Map setup
+const map = L.map('map', {zoomControl:true}).setView([37.7749,-122.4194], 12);
 
-    // --- Typeahead core (Nominatim) ---
-    function attachTypeahead(input, onPick){ var dd=null, items=[], activeIdx=-1, aborter=null; function close(){ if(dd){ dd.remove(); dd=null; } activeIdx=-1; if(aborter){ aborter.abort(); aborter=null; } }
-      function render(list){ var wrap=input.closest('.ta-wrap'); if(!wrap) return; if(!dd){ dd=document.createElement('div'); dd.className='ta'; wrap.appendChild(dd); } dd.innerHTML=''; list.forEach(function(r,ix){ var div=document.createElement('div'); div.className='ta-item'+(ix===activeIdx?' active':''); div.textContent=r.display_name || r.name || r; div.addEventListener('mousedown', function(e){ e.preventDefault(); onPick(r.display_name || r.name || r); close(); }); dd.appendChild(div); }); if(list.length===0){ close(); } }
-      function debounce(fn, ms){ var t; return function(){ var a=arguments; clearTimeout(t); t=setTimeout(function(){ fn.apply(null,a); }, ms); } }
-      async function query(q){ if(!q || q.length<3) { close(); return; } try{ if(aborter) aborter.abort(); aborter=new AbortController(); var url='https://nominatim.openstreetmap.org/search?format=json&q='+encodeURIComponent(q)+'&limit=5&addressdetails=0'; var resp=await fetch(url,{ signal:aborter.signal, headers:{'Accept':'application/json'} }); if(!resp.ok) return; var data=await resp.json(); items=data||[]; activeIdx=-1; render(items); } catch(e){ /* ignore */ } }
-      var onInput=debounce(function(){ query(input.value.trim()); }, 200);
-      input.addEventListener('input', onInput);
-      input.addEventListener('keydown', function(e){ if(!dd) return; if(e.key==='ArrowDown'){ e.preventDefault(); activeIdx=Math.min(items.length-1, activeIdx+1); render(items); } else if(e.key==='ArrowUp'){ e.preventDefault(); activeIdx=Math.max(0, activeIdx-1); render(items); } else if(e.key==='Enter'){ if(activeIdx>=0 && items[activeIdx]){ e.preventDefault(); onPick(items[activeIdx].display_name || items[activeIdx].name || ''); close(); } }
-      });
-      input.addEventListener('blur', function(){ setTimeout(close, 150); });
-    }
+// **Open & free dark raster** from CARTO basemaps: Dark Matter (no auth required) 
+// Docs & styles: https://github.com/CartoDB/basemap-styles
+// Provider catalog: https://leaflet-extras.github.io/leaflet-providers/preview/
+const darkBase = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
+  attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors, © <a href="https://carto.com/attributions" target="_blank" rel="noopener">CARTO</a>',
+  subdomains: 'abcd',
+  maxZoom: 20
+});
+const darkLabels = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png', {
+  attribution: '', subdomains: 'abcd', maxZoom: 20, opacity: 0.95
+});
 
-    // Attach typeahead to Regions input too with dropdown below input
-    function attachRegionTypeahead(){ var el=document.getElementById('regionName'); if(!el) return; attachTypeahead(el, function(sel){ el.value=sel; }); el.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); document.getElementById('findRegionBtn').click(); } }); }
+const dark = L.layerGroup([darkBase, darkLabels]);
 
-    // -------- Markers for stops --------
-    function clearMarkers(){ state.markers.forEach(function(m){ state.map.removeLayer(m); }); state.markers=[]; }
-    function markerIcon(idx,total){ var cls=(idx===0)?'origin':((idx===total-1)?'dest':''); return L.divIcon({ className:'', html:'<div class="num-marker '+cls+'">'+(idx+1)+'</div>', iconSize:[28,28], iconAnchor:[14,14] }); }
-    function placeMarkers(points){ clearMarkers(); if(!points||!points.length) return; points.forEach(function(p,i){ var mk=L.marker([p.lat,p.lng],{draggable:true,icon:markerIcon(i,points.length)}).addTo(state.map); mk.bindTooltip('Stop '+(i+1),{permanent:true,direction:'top',className:'marker-label',offset:[0,-12]}); mk.on('dragend',function(e){ onMarkerDragEnd(i,e); }); state.markers.push(mk); }); }
-    async function onMarkerDragEnd(idx,e){ try{ var ll=e.target.getLatLng(); if(!Array.isArray(state.lastPoints)||!state.lastPoints[idx]) return; state.lastPoints[idx]={lat:ll.lat,lng:ll.lng}; var inputs=document.querySelectorAll('.wp-input'); if(inputs[idx]) inputs[idx].value=ll.lat.toFixed(6)+','+ll.lng.toFixed(6); await rerouteFromLastPoints(); } catch(err){ console.error(err); showError('DRAG_ERROR', err.message||String(err)); } }
+// Light: OSM Standard (open & free)
+const light = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
+  maxZoom: 19
+});
 
-    // -------- Advanced settings --------
-    function getAdvancedSettings(){ var steps=parseInt(document.getElementById('advSteps').value,10); if(!isFinite(steps)||steps<1) steps=6; var tolM=parseFloat(document.getElementById('advSimplify').value); if(!isFinite(tolM)||tolM<0) tolM=7; var prec=parseInt(document.getElementById('advPrecision').value,10); if(!isFinite(prec)||prec<0) prec=5; return { steps:steps, simplifyMeters:tolM, precision:prec };
-    }
+// Optional high-contrast B/W using CARTO Toner-like (Toner is legacy) — use CARTO dark without labels + labels only
+const highContrast = L.layerGroup([
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', { subdomains: 'abcd', maxZoom: 20 }),
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png', { subdomains: 'abcd', maxZoom: 20, opacity: 1 })
+]);
 
-    // -------- Geocoding / Routing / Buffering --------
-    async function geocodeIfNeeded(input){ if(Array.isArray(input)) return {lat:input[0], lng:input[1]}; var ll=isLatLng(input); if(ll) return {lat:ll[0], lng:ll[1]}; var q=String(input||'').trim(); if(!q) throw new Error('Empty value'); var url='https://nominatim.openstreetmap.org/search?format=json&q='+encodeURIComponent(q)+'&limit=1&addressdetails=0'; var resp=await fetch(url,{headers:{'Accept':'application/json'}}); if(!resp.ok) throw new Error('Geocoding failed ('+resp.status+')'); var data=await resp.json(); if(!Array.isArray(data)||!data.length) throw new Error('No geocoding results'); var lat=data[0].lat, lon=data[0].lon; return {lat:parseFloat(lat), lng:parseFloat(lon)}; }
-    async function fetchRouteForPoints(pointsLL){ if(!Array.isArray(pointsLL)||pointsLL.length<2) throw new Error('Need at least 2 stops'); if(pointsLL.length>state.maxStops) throw new Error('Maximum '+state.maxStops+' stops supported'); var coords=pointsLL.map(function(p){ return p.lng+','+p.lat; }).join(';'); var url='https://router.project-osrm.org/route/v1/driving/'+coords+'?overview=full&geometries=geojson&steps=false'; var resp=await fetch(url); if(!resp.ok) throw new Error('Routing failed ('+resp.status+')'); var data=await resp.json(); if(!data||data.code!=='Ok'||!data.routes||!data.routes.length) throw new Error('No route found'); return data.routes[0].geometry; }
+// default add dark
+dark.addTo(map);
 
-    function postProcessBuffer(feature, settings){ var out=feature||null; if(!out) return out; var tolM=settings&&settings.simplifyMeters; if(isFinite(tolM)&&tolM>0){ var tolDeg=tolM/111320; try{ out=turf.simplify(out,{tolerance:tolDeg, highQuality:true}); }catch(e){} } var prec=settings&&settings.precision; if(isFinite(prec)&&prec>=0){ out=roundFeatureCoords(out,prec); } return out; }
-    function roundFeatureCoords(feat, precision){ function rnd(v){ var p=Math.pow(10,precision); return Math.round(v*p)/p; } function walk(coords){ if(typeof coords[0]==='number'){ return [rnd(coords[0]), rnd(coords[1])]; } return coords.map(walk); } var o=JSON.parse(JSON.stringify(feat)); if(o&&o.geometry&&o.geometry.coordinates) o.geometry.coordinates=walk(o.geometry.coordinates); return o; }
-    function bufferLine(lineGeom, meters, settings){ var line=turf.lineString(lineGeom.coordinates); var km=(Number(meters)||25)/1000; var steps=(settings&&settings.steps)||6; var buf=turf.buffer(line, km, {units:'kilometers', steps:steps}); if(!buf||!buf.geometry) throw new Error('Buffering failed'); return postProcessBuffer(buf, settings); }
-    function bufferPolygon(polyFeature, meters, settings){ var km=(Number(meters)||25)/1000; var steps=(settings&&settings.steps)||6; var buf=turf.buffer(polyFeature, km, {units:'kilometers', steps:steps}); if(!buf||!buf.geometry) throw new Error('Buffering failed'); return postProcessBuffer(buf, settings); }
+const drawn = new L.FeatureGroup(); map.addLayer(drawn);
+const drawControl = new L.Control.Draw({ edit:{ featureGroup:drawn, edit:true, remove:true }, draw:{ polyline:false, rectangle:false, circle:false, marker:false, circlemarker:false, polygon:{showArea:true} } });
+let drawEnabled=false; let drawHandler=null;
 
-    async function rerouteFromLastPoints(){ setLoading(true); clearError(); try{ if(!state.lastPoints||state.lastPoints.length<2) throw new Error('Need at least 2 stops'); var lineGeom=await fetchRouteForPoints(state.lastPoints); var radius=parseInt(document.getElementById('bufferRadius').value,10)||25; var adv=getAdvancedSettings(); var bufferFeature=bufferLine(lineGeom, radius, adv); placeMarkers(state.lastPoints); render(lineGeom, bufferFeature, null); } catch(e){ console.error(e); showError('PROCESSING_ERROR', e.message||String(e)); } finally{ setLoading(false); } }
+// State
+let workflow='manual';
+let regionMode='find';
+let manualStops=[]; let manualRoute=null; let urlRoute=null; let regionPoly=null; let bufferPoly=null;
 
-    // -------- Regions --------
-    async function findRegionByName(name){ name=String(name||'').trim(); var result=null; try{ if(isUSZip(name)){ var z=await fetchUSZipPolygon(name); if(z) return z; } var url='https://nominatim.openstreetmap.org/search?format=json&q='+encodeURIComponent(name)+'&limit=5&polygon_geojson=1&addressdetails=0'; var resp=await fetch(url,{headers:{'Accept':'application/json'}}); if(!resp.ok) throw new Error('Region lookup failed ('+resp.status+')'); var data=await resp.json(); if(!Array.isArray(data)||!data.length) throw new Error('No region results'); for(var i=0;i<data.length;i++){ if(data[i].geojson && data[i].geojson.type && data[i].geojson.type!=='Point'){ result={ type:'Feature', properties:{ name:data[i].display_name||'Region' }, geometry:data[i].geojson }; break; } } if(!result){ result={ type:'Feature', properties:{ name:data[0].display_name||'Region' }, geometry:data[0].geojson || { type:'Point', coordinates:[ parseFloat(data[0].lon), parseFloat(data[0].lat) ] } }; } return result; } catch(e){ throw e; } }
-    async function fetchUSZipPolygon(zip){ try{ var url1='https://nominatim.openstreetmap.org/search?format=json&postalcode='+encodeURIComponent(zip)+'&countrycodes=us&limit=5&polygon_geojson=1&addressdetails=0'; var r1=await fetch(url1,{headers:{'Accept':'application/json'}}); if(r1.ok){ var d1=await r1.json(); for(var i=0;i<d1.length;i++){ var it=d1[i]; if(it.geojson && it.geojson.type && it.geojson.type!=='Point'){ if((it.class==='boundary'&&it.type==='postal_code')||(it.addresstype==='postcode')){ return { type:'Feature', properties:{ name: it.display_name||('ZIP '+zip) }, geometry: it.geojson }; } } } for(var j=0;j<d1.length;j++){ var it2=d1[j]; if(it2.geojson && it2.geojson.type && it2.geojson.type!=='Point'){ return { type:'Feature', properties:{ name: it2.display_name||('ZIP '+zip) }, geometry: it2.geojson }; } } } var url2='https://nominatim.openstreetmap.org/search?format=json&q='+encodeURIComponent(zip+' USA')+'&limit=5&polygon_geojson=1&addressdetails=0'; var r2=await fetch(url2,{headers:{'Accept':'application/json'}}); if(r2.ok){ var d2=await r2.json(); for(var k=0;k<d2.length;k++){ var it3=d2[k]; if(it3.geojson && it3.geojson.type && it3.geojson.type!=='Point'){ return { type:'Feature', properties:{ name: it3.display_name||('ZIP '+zip) }, geometry: it3.geojson }; } } } return null; } catch(e){ return null; } }
-    function setRegionFeature(feat){ state.regionFeature=feat; if(state.regionLayer){ state.map.removeLayer(state.regionLayer); state.regionLayer=null; } state.regionLayer=L.geoJSON(feat,{ style:{ color:'#f59e0b', weight:2, opacity:.9, fillColor:'#fbbf24', fillOpacity:.15 } }).addTo(state.map); try{ state.map.fitBounds(state.regionLayer.getBounds(),{padding:[20,20]}); }catch(e){} updateGeomChoices(); updateOutputText(); }
-    function clearRegion(){ if(state.regionLayer){ state.map.removeLayer(state.regionLayer); state.regionLayer=null; } state.regionFeature=null; updateGeomChoices(); }
+function clearAll(){ manualStops.forEach(m=>map.removeLayer(m)); manualStops=[]; if(manualRoute){map.removeLayer(manualRoute);manualRoute=null;} if(urlRoute){map.removeLayer(urlRoute);urlRoute=null;} if(regionPoly){map.removeLayer(regionPoly);regionPoly=null;} if(bufferPoly){map.removeLayer(bufferPoly);bufferPoly=null;} drawn.clearLayers(); updatePreview(); }
+function fitTo(layer){ try{ map.fitBounds(layer.getBounds(), {padding:[20,20]}); }catch(e){} }
+function activeGeometryGeoJSON(){ if(bufferPoly) return bufferPoly.toGeoJSON(); if(regionPoly) return regionPoly.toGeoJSON(); if(workflow==='manual'&&manualRoute) return manualRoute.toGeoJSON(); if(workflow==='url'&&urlRoute) return urlRoute.toGeoJSON(); return null; }
 
-    // -------- Rendering & Output --------
-    function render(lineGeom, bufferFeature, regionBuffer){ var map=state.map; if(state.routeLayer){ map.removeLayer(state.routeLayer); state.routeLayer=null; } if(state.bufferLayer){ map.removeLayer(state.bufferLayer); state.bufferLayer=null; } if(bufferFeature){ state.bufferLayer=L.geoJSON(bufferFeature,{ style:{ color:'#16a34a', weight:2, opacity:.9, fillColor:'#22c55e', fillOpacity:.25 } }).addTo(map); state.lastBuffer=bufferFeature; } if(lineGeom){ state.routeLayer=L.geoJSON({type:'Feature', geometry:lineGeom},{ style:{ color:'#2563eb', weight:4, opacity:.9 } }).addTo(map); state.lastRoute=lineGeom; } var layers=[]; if(state.bufferLayer) layers.push(state.bufferLayer); if(state.routeLayer) layers.push(state.routeLayer); if(state.regionLayer) layers.push(state.regionLayer); for(var i=0;i<state.markers.length;i++){ layers.push(state.markers[i]); } if(layers.length){ var group=new L.FeatureGroup(layers); try{ map.fitBounds(group.getBounds(),{padding:[20,20]}); }catch(e){} } updateGeomChoices(); updateOutputText(); }
+function asFeatureCollection(gj){ if(!gj) return null; if(gj.type==='FeatureCollection') return gj; if(gj.type==='Feature') return {type:'FeatureCollection',features:[gj]}; return {type:'FeatureCollection',features:[{type:'Feature',properties:{},geometry:gj}]}; }
+function wktFrom(gj){ if(!gj) return ''; if (gj.type==='FeatureCollection') return gj.features.map(f=>Terraformer.WKT.convert(f.geometry)).join('\n'); if(gj.type==='Feature') return Terraformer.WKT.convert(gj.geometry); return Terraformer.WKT.convert(gj); }
 
-    function updateGeomChoices(){ var box=document.getElementById('geomChoices'); if(!box) return; var prev=document.querySelector('input[name="exportGeom"]:checked'); var prevVal=prev?prev.value:'buffer'; box.innerHTML=''; var opts=[]; if(state.lastBuffer) opts.push({val:'buffer',label:'Buffer Polygon'}); if(state.lastRoute) opts.push({val:'route',label:'Route Line'}); if(state.regionFeature) opts.push({val:'region',label:'Region Polygon'}); if(opts.length===0) opts.push({val:'buffer',label:'Buffer Polygon'}); for(var i=0;i<opts.length;i++){ var o=opts[i]; var wrap=document.createElement('label'); wrap.style.marginRight='12px'; var input=document.createElement('input'); input.type='radio'; input.name='exportGeom'; input.value=o.val; wrap.appendChild(input); wrap.appendChild(document.createTextNode(' '+o.label)); box.appendChild(wrap); } var radios=box.querySelectorAll('input[name="exportGeom"]'); Array.prototype.forEach.call(radios,function(r){ r.addEventListener('change', updateOutputText); }); var restored=false; Array.prototype.forEach.call(radios,function(r){ if(r.value===prevVal){ r.checked=true; restored=true; } }); if(!restored && radios.length){ radios[0].checked=true; } }
+async function updatePreview(){
+  const fmt=document.querySelector('input[name="fmt"]:checked').value; const gj=activeGeometryGeoJSON(); const prev=document.getElementById('preview'); if(!gj){ prev.textContent='—'; return; }
+  try{
+    if(fmt==='geojson'){ prev.textContent=JSON.stringify(gj,null,2); }
+    else if(fmt==='wkt'){ const ok=await ensureTerraformerWKT(); if(!ok){ prev.textContent='WKT preview unavailable (Terraformer not loaded).'; return; } prev.textContent=wktFrom(gj); }
+    else if(fmt==='kml'){ const ok=await ensureToKml(); if(!ok){ prev.textContent='KML preview unavailable (tokml not loaded).'; return; } prev.textContent=tokml(asFeatureCollection(gj)); }
+    else if(fmt==='shp'){ prev.textContent='Shapefile will be downloaded as a .zip when you click Download.' }
+  }catch(e){ prev.textContent='Error generating preview: '+e.message; }
+}
 
-    function pickExportGeometry(){ var el=document.querySelector('input[name="exportGeom"]:checked'); var choice=el?el.value:'buffer'; if(choice==='route'){ if(!state.lastRoute) throw new Error('No route available'); return { type:'Feature', properties:{}, geometry: state.lastRoute }; } else if(choice==='region'){ if(!state.regionFeature) throw new Error('No region polygon available'); return state.regionFeature; } else { if(!state.lastBuffer) throw new Error('No buffer available'); return state.lastBuffer; } }
+const PRECISION_FIXED = 4;
+function roundCoords(gj){ function r(n){return +n.toFixed(PRECISION_FIXED);} function rc(c){ if(typeof c[0]==='number') return [r(c[0]),r(c[1])]; return c.map(rc);} const out=JSON.parse(JSON.stringify(gj)); if(out.type==='Feature') out.geometry.coordinates=rc(out.geometry.coordinates); else if(out.type==='FeatureCollection') out.features=out.features.map(f=>{f.geometry.coordinates=rc(f.geometry.coordinates); return f}); else out.coordinates=rc(out.coordinates); return out; }
+function toFeatureOrCollection(gj){ if(!gj) return null; if(gj.type==='Feature'||gj.type==='FeatureCollection') return gj; if(gj.type&&gj.coordinates) return {type:'Feature',properties:{},geometry:gj}; if(gj.geometry) return {type:'Feature',properties:gj.properties||{},geometry:gj.geometry}; return null; }
 
-    function toKML(feature){ var geom=feature.geometry||feature; function esc(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); } function coordsStr(c){ return c.map(function(x){ return x[0]+','+x[1]+',0'; }).join(' '); } function closeRing(r){ return (r.length && (r[0][0]!==r[r.length-1][0] || r[0][1]!==r[r.length-1][1])) ? r.concat([r[0]]) : r; } function poly(coords){ var outer=coords[0], inner=coords.slice(1); var k='<outerBoundaryIs><LinearRing><coordinates>'+coordsStr(closeRing(outer))+'</coordinates></LinearRing></outerBoundaryIs>'; inner.forEach(function(h){ k+='<innerBoundaryIs><LinearRing><coordinates>'+coordsStr(closeRing(h))+'</coordinates></LinearRing></innerBoundaryIs>'; }); return '<Polygon>'+k+'</Polygon>'; } var g=''; if(geom.type==='LineString'){ g='<LineString><coordinates>'+coordsStr(geom.coordinates)+'</coordinates></LineString>'; } else if(geom.type==='Polygon'){ g=poly(geom.coordinates); } else if(geom.type==='MultiPolygon'){ g=geom.coordinates.map(function(p){ return '<Placemark>'+poly(p)+'</Placemark>'; }).join(''); } else { throw new Error('KML format supports LineString, Polygon, MultiPolygon'); } var name=(feature.properties&&feature.properties.name)||'Export'; var pm=(geom.type==='MultiPolygon')?g:('<Placemark><name>'+esc(name)+'</name>'+g+'</Placemark>'); return '<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document>'+pm+'</Document></kml>'; }
-    function updateOutputText(){ var fmtEl=document.querySelector('input[name="exportFmt"]:checked'); var fmt=fmtEl?fmtEl.value:'wkt'; var txt=document.getElementById('outputText'); try{ var feat=pickExportGeometry(); if(fmt==='wkt'){ txt.value=wellknown.stringify(feat.geometry)||''; } else if(fmt==='geojson'){ txt.value=JSON.stringify(feat,null,2); } else if(fmt==='kml'){ txt.value=toKML(feat); } else if(fmt==='shp'){ txt.value='Shapefile (.zip) will be downloaded. Preview is not available for binary formats.'; } } catch(e){ txt.value='Output unavailable: '+(e.message||String(e)); } }
+function setActivePanel(){ document.querySelectorAll('#workflowPanels .panel').forEach(p=>p.classList.remove('active')); const id=(workflow==='url')?'panel-url':(workflow==='manual')?'panel-manual':'panel-regions'; document.getElementById(id).classList.add('active'); }
 
-    async function downloadCurrent(){ var fmtEl=document.querySelector('input[name="exportFmt"]:checked'); var fmt=fmtEl?fmtEl.value:'wkt'; if(fmt==='shp'){ return downloadShapefile(); } var mime='text/plain', ext='txt'; if(fmt==='wkt'){ mime='text/plain'; ext='wkt'; } if(fmt==='geojson'){ mime='application/geo+json'; ext='geojson'; } if(fmt==='kml'){ mime='application/vnd.google-earth.kml+xml'; ext='kml'; } var text=document.getElementById('outputText').value||''; if(!text){ showError('EXPORT_ERROR','Nothing to download. Run first.'); return; } var geomEl=document.querySelector('input[name="exportGeom"]:checked'); var geom=(geomEl?geomEl.value:'buffer'); var filename='export_'+geom+'.'+ext; var blob=new Blob([text],{type:mime}); var url=URL.createObjectURL(blob); var a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); }
+function startPolygonDraw(){ if (!drawEnabled){ map.addControl(drawControl); drawEnabled=true; } if (drawHandler) { try{ drawHandler.disable(); }catch(e){} } drawHandler = new L.Draw.Polygon(map, drawControl.options.draw.polygon); drawHandler.enable(); }
+function stopPolygonDraw(){ if(drawHandler){ try{ drawHandler.disable(); }catch(e){} drawHandler=null; } }
 
-    // Shapefile loader (dynamic, two-CDN fallback)
-    
-    // Shapefile loader (dynamic, multi-CDN + multi-package fallback)
-    async function ensureShpWriteLoaded(){
-      if(typeof window.shpwrite !== 'undefined') return window.shpwrite;
-      const tried = [];
-      function load(src){
-        return new Promise((res, rej) => {
-          const s = document.createElement('script');
-          s.src = src; s.async = true;
-          s.onload = () => res(true);
-          s.onerror = () => rej(new Error('Failed '+src));
-          document.head.appendChild(s);
-        });
-      }
-      // Primary: official package moved to @mapbox/shp-write
-      const cdns = [
-        'https://unpkg.com/@mapbox/shp-write@0.4.3/shpwrite.js',
-        'https://unpkg.com/@mapbox/shp-write@latest/shpwrite.js',
-        'https://cdn.jsdelivr.net/npm/@mapbox/shp-write@0.4.3/shpwrite.js',
-        'https://cdn.jsdelivr.net/npm/@mapbox/shp-write@latest/shpwrite.js',
-        // Legacy package (deprecated, kept as deep fallback)
-        'https://unpkg.com/shp-write@0.3.2/shpwrite.js',
-        'https://cdn.jsdelivr.net/npm/shp-write@0.3.2/shpwrite.js',
-        // Community-maintained mirrors (additional safety net)
-        'https://cdn.jsdelivr.net/npm/@nickrsan/shp-write@0.3.7/shpwrite.js',
-        'https://unpkg.com/@nickrsan/shp-write@0.3.7/shpwrite.js',
-        'https://cdn.jsdelivr.net/npm/@simwrapper/shp-write@0.3.3/shpwrite.js',
-        'https://unpkg.com/@simwrapper/shp-write@0.3.3/shpwrite.js'
-      ];
-      for(const url of cdns){
-        tried.push(url);
-        try{ await load(url); if(typeof window.shpwrite !== 'undefined') return window.shpwrite; } catch(e) { /* try next */ }
-      }
-      throw new Error('Could not load shp-write from: '+tried.join(', '));
-    }
-async function downloadShapefile(){ try{ await ensureShpWriteLoaded(); if(typeof shpwrite==='undefined'){ showError('EXPORT_ERROR','Shapefile support not loaded.'); return; } var feat=pickExportGeometry(); var fc={ type:'FeatureCollection', features:[feat] }; var gtype=feat && feat.geometry ? feat.geometry.type : 'geometry'; var layerName='export_'+gtype.toLowerCase(); var zip=shpwrite.zip(fc, { folder:'shapefile', types:{} }); var blob= zip instanceof Blob ? zip : new Blob([zip],{type:'application/zip'}); var a=document.createElement('a'); var url=URL.createObjectURL(blob); a.href=url; a.download=layerName+'.zip'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); } catch(e){ console.error(e); showError('EXPORT_ERROR', e.message||String(e)); } }
+document.getElementById('modeRow').addEventListener('change',e=>{ if(e.target&&e.target.name==='workflow'){ workflow=e.target.value; clearAll(); setActivePanel(); if(workflow==='regions'&&regionMode==='draw'){ startPolygonDraw(); } else { stopPolygonDraw(); if(drawEnabled){ map.removeControl(drawControl); drawEnabled=false; } } }});
 
-    // -------- Actions --------
-    async function handleParse(){ clearError(); setLoading(true); state.fallbackQueue=[]; try{ var url=(document.getElementById('gmapsUrl').value||'').trim(); if(!url) throw new Error('Please paste a Google Maps directions URL.'); if(/maps\.app\.goo\.gl|goo\.gl\/maps/.test(url)) url=await resolveShortUrl(url); state.fallbackQueue=extractLatLngPairsFromUrl(url); var parsed=parseGMapsUrl(url); if(!parsed||!parsed.points||parsed.points.length<2){ showError('INVALID_URL','Could not parse at least 2 stops from the URL.'); return; } renderWaypointList(parsed.points); setMode('manual'); // drop pins before routing
-      var pointsLL=[]; for(var i=0;i<parsed.points.length;i++){ try{ pointsLL.push(await geocodeIfNeeded(parsed.points[i])); }catch(e){ } } if(pointsLL.length){ state.lastPoints=pointsLL; placeMarkers(pointsLL); }
-    } catch(e){ console.error(e); showError('PARSE_ERROR', e.message||String(e)); } finally{ setLoading(false); } }
+// Theme toggle among free/open raster layers
+const themeSel = document.getElementById('mapTheme');
+let currentBase = dark; // default
+function setBase(layer){ if(currentBase){ map.removeLayer(currentBase); } currentBase = layer; layer.addTo(map); }
 
-    async function handleRun(){ clearError(); setLoading(true); document.getElementById('outputText').value=''; try{ var radius=parseInt(document.getElementById('bufferRadius').value,10)||25; var adv=getAdvancedSettings(); if(state.mode==='regions'){ if(!state.regionFeature) throw new Error('No region polygon set. Search a region or draw one.'); var regionBuf=bufferPolygon(state.regionFeature, radius, adv); render(null, regionBuf, regionBuf); } else { var values=[]; if(state.mode==='url'){ values=getWaypointValues(); if(values.length<2){ var url=(document.getElementById('gmapsUrl').value||'').trim(); if(!url) throw new Error('Paste a URL or switch to Manual mode to enter stops.'); if(/maps\.app\.goo\.gl|goo\.gl\/maps/.test(url)) url=await resolveShortUrl(url); state.fallbackQueue=extractLatLngPairsFromUrl(url); var parsed=parseGMapsUrl(url); if(!parsed||!parsed.points||parsed.points.length<2) throw new Error('Could not parse at least 2 stops from the URL.'); renderWaypointList(parsed.points); values=parsed.points; } } else { values=getWaypointValues(); } if(values.length<2) throw new Error('Add at least origin and destination'); if(values.length>state.maxStops) throw new Error('Maximum '+state.maxStops+' stops supported'); var fbq=state.fallbackQueue.slice(); var pointsLL=[]; for(var i=0;i<values.length;i++){ var seg=values[i]; try{ pointsLL.push(await geocodeIfNeeded(seg)); } catch(e){ if(fbq.length) pointsLL.push(fbq.shift()); else throw e; } } state.lastPoints=pointsLL; placeMarkers(pointsLL); var lineGeom=await fetchRouteForPoints(pointsLL); var bufferFeature=bufferLine(lineGeom, radius, adv); render(lineGeom, bufferFeature, null); } } catch(e){ console.error(e); showError('PROCESSING_ERROR', e.message||String(e)); } finally{ setLoading(false); } }
+themeSel.addEventListener('change', e=>{
+  const v=e.target.value;
+  if (v==='dark') setBase(dark);
+  else if (v==='light') setBase(light);
+  else if (v==='hc') setBase(highContrast);
+});
 
-    function setMode(mode){ if(mode===state.mode) return; state.mode=mode; var btnUrl=document.getElementById('modeUrl'); var btnManual=document.getElementById('modeManual'); var btnRegions=document.getElementById('modeRegions'); var urlSection=document.getElementById('urlSection'); var manualSection=document.getElementById('manualSection'); var regionsSection=document.getElementById('regionsSection'); btnUrl.classList.remove('active'); btnManual.classList.remove('active'); btnRegions.classList.remove('active'); btnUrl.setAttribute('aria-selected','false'); btnManual.setAttribute('aria-selected','false'); btnRegions.setAttribute('aria-selected','false'); urlSection.style.display='none'; manualSection.style.display='none'; regionsSection.style.display='none'; if(mode==='url'){ btnUrl.classList.add('active'); btnUrl.setAttribute('aria-selected','true'); urlSection.style.display='block'; } else if(mode==='manual'){ btnManual.classList.add('active'); btnManual.setAttribute('aria-selected','true'); manualSection.style.display='block'; } else { btnRegions.classList.add('active'); btnRegions.setAttribute('aria-selected','true'); regionsSection.style.display='block'; }
-      clearMapGeoms(); }
+// OSRM routing
+function coordsToOSRMString(latlngs){ return latlngs.map(ll=>`${ll.lng.toFixed(6)},${ll.lat.toFixed(6)}`).join(';'); }
+async function fetchOSRMRoute(latlngs){ if(latlngs.length<2) throw new Error('Need at least 2 waypoints'); const coords=coordsToOSRMString(latlngs); const url=`https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=false&alternatives=false`; const res=await fetch(url,{headers:{'Accept':'application/json'}}); if(!res.ok) throw new Error('OSRM network error'); const data=await res.json(); if(data.code!=='Ok'||!data.routes||!data.routes[0]) throw new Error('OSRM returned no route'); return data.routes[0].geometry; }
+let routeTimer=null; function setWorking(v){ document.getElementById('working').style.display = v?'block':'none'; }
+async function buildManualRoute(){ if(manualRoute){map.removeLayer(manualRoute);manualRoute=null;} const pts=manualStops.map(m=>m.getLatLng()); if(pts.length<2){ updatePreview(); return; } setWorking(true); try{ const geom=await fetchOSRMRoute(pts); manualRoute=L.geoJSON({type:'Feature',properties:{},geometry:geom},{style:{color:'#5ac8fa',weight:3}}).addTo(map); fitTo(manualRoute);} catch(e){ console.warn(e); manualRoute=L.polyline(pts,{color:'#5ac8fa'}).addTo(map);} finally{ setWorking(false); updatePreview(); } }
+async function buildUrlRoute(latlngs){ if(urlRoute){map.removeLayer(urlRoute);urlRoute=null;} if(!latlngs||latlngs.length<2) return; setWorking(true); try{ const geom=await fetchOSRMRoute(latlngs); urlRoute=L.geoJSON({type:'Feature',properties:{},geometry:geom},{style:{color:'#5ac8fa',weight:3}}).addTo(map); fitTo(urlRoute);} catch(e){ console.warn(e); urlRoute=L.polyline(latlngs,{color:'#5ac8fa'}).addTo(map);} finally{ setWorking(false); updatePreview(); } }
 
-    // Regions find/draw toggle
-    function setRegionMode(mode){ state.regionMode=mode; var bF=document.getElementById('btnRegionFind'); var bD=document.getElementById('btnRegionDraw'); bF.classList.remove('active'); bD.classList.remove('active'); bF.setAttribute('aria-selected','false'); bD.setAttribute('aria-selected','false'); document.getElementById('regionFindWrap').style.display='none'; document.getElementById('regionDrawWrap').style.display='none'; if(mode==='find'){ bF.classList.add('active'); bF.setAttribute('aria-selected','true'); document.getElementById('regionFindWrap').style.display='block'; } else { bD.classList.add('active'); bD.setAttribute('aria-selected','true'); document.getElementById('regionDrawWrap').style.display='block'; try{ new L.Draw.Polygon(state.map).enable(); }catch(e){} }
-    }
+// Manual
+map.on('click',e=>{ if(workflow!=='manual') return; if(manualStops.length>=10){ alert('Max 10 stops'); return; } const idx=manualStops.length+1; const m=L.marker(e.latlng,{draggable:true,title:'Stop '+idx}).addTo(map); m.bindTooltip(String(idx),{permanent:true,direction:'top',className:'stop-label'}).openTooltip(); m.on('dragend',()=>{clearTimeout(routeTimer); routeTimer=setTimeout(buildManualRoute,250);}); manualStops.push(m); clearTimeout(routeTimer); routeTimer=setTimeout(buildManualRoute,150); });
 
-    // -------- Wire up --------
-    window.addEventListener('DOMContentLoaded', function(){
-      initMap(); attachRegionTypeahead();
-      // Map theme toggle
-      document.getElementById('mapThemeBtn').addEventListener('click', function(){ var t=(state.mapTheme==='dark')?'light':'dark'; state.mapTheme=t; applyMapTheme(t); });
+document.getElementById('clearManualBtn').addEventListener('click',()=>{ manualStops.forEach(m=>map.removeLayer(m)); manualStops=[]; if(manualRoute){map.removeLayer(manualRoute);manualRoute=null;} if(bufferPoly){map.removeLayer(bufferPoly);bufferPoly=null;} updatePreview(); });
 
-      // Mode toggle
-      document.getElementById('modeUrl').addEventListener('click', function(){ setMode('url'); });
-      document.getElementById('modeManual').addEventListener('click', function(){ setMode('manual'); });
-      document.getElementById('modeRegions').addEventListener('click', function(){ setMode('regions'); });
+// URL workflow
+function parseGoogleMapsURL(url){ try{ const u=new URL(url); const parts=u.pathname.split('/').filter(Boolean); const coords=[]; if(parts[0]==='maps'&&parts[1]==='dir'){ for(let i=2;i<parts.length;i++){ const seg=decodeURIComponent(parts[i]); if(/^\-?\d+\.\d+,\-?\d+\.\d+$/.test(seg)){ const [lat,lng]=seg.split(',').map(Number); coords.push(L.latLng(lat,lng)); } } } if(coords.length<2&&u.href.includes('@')){ const after=u.href.split('@')[1].split(','); if(after.length>=2) coords.push(L.latLng(parseFloat(after[0]),parseFloat(after[1]))); } return coords; }catch(e){ return []; } }
 
-      // URL
-      document.getElementById('parseBtn').addEventListener('click', handleParse);
+document.getElementById('parseUrlBtn').addEventListener('click',()=>{ const txt=document.getElementById('urlInput').value.trim(); if(!txt) return; const pts=parseGoogleMapsURL(txt); if(pts.length<2){ alert('Could not find at least two coordinates in the URL. Paste a full /dir/ URL.'); return; } buildUrlRoute(pts); });
 
-      // Manual editor
-      document.getElementById('addStopBtn').addEventListener('click', function(){ addWaypointRow(''); });
-      document.getElementById('clearStopsBtn').addEventListener('click', function(){ var l=document.getElementById('wpList'); l.innerHTML=''; updateIndices(); clearMapGeoms(); });
+// Regions — suggestions & auto-find on selection/enter
+const regionQuery=document.getElementById('regionQuery'); let suggestTimer=null; async function suggestRegions(q){ const url=`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&addressdetails=0&limit=5`; const res=await fetch(url,{headers:{'Accept':'application/json'}}); if(!res.ok) return []; return await res.json(); }
+regionQuery.addEventListener('input',()=>{ const q=regionQuery.value.trim(); clearTimeout(suggestTimer); if(q.length<3) return; suggestTimer=setTimeout(async()=>{ try{ const list=await suggestRegions(q); const dl=document.getElementById('region-suggest'); dl.innerHTML=''; list.forEach(item=>{ const opt=document.createElement('option'); opt.value=item.display_name; dl.appendChild(opt); }); }catch(e){} },300); });
 
-      // Regions
-      document.getElementById('btnRegionFind').addEventListener('click', function(){ setRegionMode('find'); });
-      document.getElementById('btnRegionDraw').addEventListener('click', function(){ setRegionMode('draw'); });
-      document.getElementById('findRegionBtn').addEventListener('click', async function(){ clearError(); setLoading(true); try{ var name=(document.getElementById('regionName').value||'').trim(); if(!name) throw new Error('Enter a region name or ZIP'); var feat=await findRegionByName(name); setRegionFeature(feat); } catch(e){ console.error(e); showError('REGION_ERROR', e.message||String(e)); } finally{ setLoading(false); } });
-      document.getElementById('clearRegionBtn').addEventListener('click', function(){ clearRegion(); clearMapGeoms(); });
-      document.getElementById('clearRegionBtn2').addEventListener('click', function(){ clearRegion(); clearMapGeoms(); });
+async function geocodePolygon(query){ const url=`https://nominatim.openstreetmap.org/search?format=json&polygon_geojson=1&q=${encodeURIComponent(query)}`; const res=await fetch(url,{headers:{'Accept':'application/json'}}); if(!res.ok) throw new Error('Geocoder error'); const arr=await res.json(); for (const it of arr){ if (it.geojson && (it.geojson.type==='Polygon' || it.geojson.type==='MultiPolygon')) return it; } throw new Error('No polygon found.'); }
 
-      // Run + Output
-      document.getElementById('runBtn').addEventListener('click', handleRun);
-      Array.prototype.forEach.call(document.querySelectorAll('input[name="exportFmt"]'), function(r){ r.addEventListener('change', updateOutputText); });
-      document.getElementById('downloadBtn').addEventListener('click', downloadCurrent);
+async function doFindRegion(){
+  const q = regionQuery.value.trim(); if (!q) return;
+  try{
+    const it = await geocodePolygon(q);
+    if (regionPoly) { map.removeLayer(regionPoly); regionPoly=null; }
+    if (bufferPoly) { map.removeLayer(bufferPoly); bufferPoly=null; }
+    const gj = it.geojson;
+    regionPoly = L.geoJSON(gj, {style:{color:'#9b87f5', weight:2, fillOpacity:0.15}}).addTo(map);
+    fitTo(regionPoly);
+    updatePreview();
+  }catch(e){ alert(e.message); }
+}
 
-      // Initialize
-      updateGeomChoices();
-    });
-  </script>
+document.getElementById('findRegionBtn').addEventListener('click', doFindRegion);
+regionQuery.addEventListener('change', ()=>{ if (regionQuery.value.trim().length >= 3) doFindRegion(); });
+regionQuery.addEventListener('keydown', (e)=>{ if (e.key==='Enter'){ e.preventDefault(); if (regionQuery.value.trim().length >= 3) doFindRegion(); } });
+
+document.getElementById('clearRegionBtn').addEventListener('click',()=>{ if(regionPoly){map.removeLayer(regionPoly);regionPoly=null;} if(bufferPoly){map.removeLayer(bufferPoly);bufferPoly=null;} updatePreview(); });
+Array.from(document.getElementsByName('regionMode')).forEach(r=>r.addEventListener('change',e=>{ regionMode=e.target.value; document.getElementById('region-find').style.display=regionMode==='find'?'':'none'; document.getElementById('region-draw').style.display=regionMode==='draw'?'':'none'; if(regionMode==='draw'){ startPolygonDraw(); } else { stopPolygonDraw(); if(drawEnabled){ map.removeControl(drawControl); drawEnabled=false; } } }));
+
+map.on(L.Draw.Event.CREATED, e=>{ if(workflow!=='regions' || regionMode!=='draw') return; drawn.clearLayers(); drawn.addLayer(e.layer); if(regionPoly){map.removeLayer(regionPoly);regionPoly=null;} if(bufferPoly){map.removeLayer(bufferPoly);bufferPoly=null;} regionPoly=e.layer; stopPolygonDraw(); fitTo(regionPoly); updatePreview(); });
+
+document.getElementById('clearDrawnBtn').addEventListener('click',()=>{ drawn.clearLayers(); if(regionPoly){map.removeLayer(regionPoly);regionPoly=null;} if(bufferPoly){map.removeLayer(bufferPoly);bufferPoly=null;} if (workflow==='regions' && regionMode==='draw') startPolygonDraw(); updatePreview(); });
+
+// Buffering
+function getMetersFromFeet(){ const ft=parseFloat(document.getElementById('bufferFeet').value||'0'); if(!isFinite(ft)||ft<0) return 0; return ft*0.3048; }
+function getAdv(){ return { steps:Math.max(4,parseInt(document.getElementById('arcSteps').value||'5',10)), simplify:Math.max(0,parseFloat(document.getElementById('simplifyTol').value||'10')) }; }
+async function runBuffer(){ const meters=getMetersFromFeet(); if(!meters){ alert('Enter a buffer greater than 0 feet.'); return; } const adv=getAdv(); const src=(regionPoly||(manualRoute||urlRoute)); if(!src){ alert('Add a route or region first.'); return; } setWorking(true); try{ const gjRaw=src.toGeoJSON(); const input=toFeatureOrCollection(gjRaw); if(!input) throw new Error('Invalid geometry'); const buffered=turf.buffer(input, meters, {units:'meters',steps:adv.steps}); let out=buffered; if(adv.simplify>0){ out=turf.simplify(out,{tolerance:adv.simplify/111320,highQuality:true}); } out=roundCoords(out); if(bufferPoly){map.removeLayer(bufferPoly);bufferPoly=null;} bufferPoly=L.geoJSON(out,{style:{color:'#34c759',weight:2,fillOpacity:0.18}}).addTo(map); fitTo(bufferPoly); updatePreview(); }catch(e){ alert('Buffer error: '+e.message);} finally{ setWorking(false);} }
+
+document.getElementById('runBufferBtn').addEventListener('click', runBuffer);
+
+// Output & download
+Array.from(document.getElementsByName('fmt')).forEach(r=>r.addEventListener('change',()=>{ updatePreview(); }));
+function currentFeature(){ const gj=activeGeometryGeoJSON(); if(!gj) return null; const input=toFeatureOrCollection(gj); if(!input) return null; if(input.type==='Feature') return input; if(input.type==='FeatureCollection') return input.features[0]; return null; }
+function download(filename, content){ const blob=new Blob([content],{type:'application/octet-stream'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=filename; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2500); }
+async function downloadShapefile(feature){ if(!feature||!feature.geometry){ alert('Nothing to download.'); return; } const coll={type:'FeatureCollection',features:[feature]}; if(!window.shpwrite){ const ok=await ensureShpWrite(); if(!ok){ alert('Unable to load Shapefile exporter.'); return; } } try{ let zipData=shpwrite.zip(coll,{file:'zone-widget'}); if(zipData&&typeof zipData.then==='function') zipData=await zipData; const blob=(zipData instanceof Blob)?zipData:new Blob([zipData],{type:'application/zip'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='zone-widget.zip'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2500);}catch(e){ alert('Shapefile export failed: '+e.message);} }
+
+document.getElementById('downloadBtn').addEventListener('click', async()=>{ const fmt=document.querySelector('input[name="fmt"]:checked').value; const f=currentFeature(); if(!f){ alert('Nothing to download.'); return; } if(fmt==='geojson'){ download('zone-widget.geojson', JSON.stringify({type:'FeatureCollection',features:[f]},null,2)); } else if(fmt==='wkt'){ const ok=await ensureTerraformerWKT(); if(!ok){ alert('Terraformer not available.'); return; } const txt=wktFrom(f); download('zone-widget.wkt', txt); } else if(fmt==='kml'){ const ok=await ensureToKml(); if(!ok){ alert('tokml not available.'); return; } const kml=tokml(asFeatureCollection(f)); download('zone-widget.kml', kml); } else if(fmt==='shp'){ await downloadShapefile(f); } });
+
+// Init
+(function init(){ document.getElementById('mode-manual').checked=true; setActivePanel(); updatePreview(); })();
+</script>
 </body>
 </html>
